@@ -34,6 +34,7 @@ def start(URL, BRANCH, CREDENTIALS) {
         }
         pipelineAsCode = load('rtk_stages.groovy')
         print "Bring to node: ${nodeName}"
+        stash name: "pf-basics", includes: "**"
     }
     sh """
         echo test1
@@ -41,6 +42,7 @@ def start(URL, BRANCH, CREDENTIALS) {
     """
     
     node(nodeName) {
+        unstash name: "pf-basics"
         pipelineAsCode.format(jsonObj.stages)
         load 'Jenkinsfile.restartable'
     }
