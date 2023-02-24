@@ -1,15 +1,9 @@
-def start() {
-    sh """
-        echo '@hera.groovy'
-        pwd && ls -al
-    """
+def start(URL, BRANCH, CREDENTIALS) {
     def pipelineAsCode
-    def buPipelineCfg = readJSON file: "Jenkinsfile.json"
-    print "buPipelineCfg: " + buPipelineCfg
     dir(".pf-settings") {
         checkout([
             $class: 'GitSCM',
-            branches: [[name: "*/${buPipelineCfg.BRANCH}"]],
+            branches: [[name: "*/${BRANCH}"]],
             extensions: [[
                 $class: 'CloneOption',
                 shallow: true,
@@ -17,8 +11,8 @@ def start() {
                 timeout: 30
             ]],
             userRemoteConfigs: [[
-                url:           buPipelineCfg.URL,
-                credentialsId: ''
+                url: URL,
+                credentialsId: CREDENTIALS
             ]]
         ])
 
