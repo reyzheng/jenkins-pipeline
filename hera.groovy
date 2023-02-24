@@ -1,10 +1,12 @@
 def start() {
     sh """
+        echo '@hera.groovy'
         pwd && ls -al
     """
     def pipelineAsCode
     def buPipelineCfg = readJSON file: "Jenkinsfile.json"
-    dir(".pf-bringup") {
+    print "buPipelineCfg: " + buPipelineCfg
+    dir(".pf-settings") {
         checkout([
             $class: 'GitSCM',
             branches: [[name: "*/${buPipelineCfg.BRANCH}"]],
