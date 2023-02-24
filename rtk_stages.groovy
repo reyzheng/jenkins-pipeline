@@ -448,6 +448,10 @@ def iterateToFile(stages) {
 }
 
 def format(stages) {
+	sh """
+		echo test2
+		pwd && ls -al
+	"""
 	if (! utils) {
 		utils = load 'utils.groovy'
 	}
