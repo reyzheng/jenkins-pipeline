@@ -23,12 +23,12 @@ def start(URL, BRANCH, CREDENTIALS) {
         }
     }
     // change to nodes user specified
-    def jsonObj
+    def nodeName = ""
     dir('.pf-bringup') {
+        def jsonObj
         dir('settings') {
             jsonObj = readJSON file: 'global_config.json'
         }
-        def nodeName = ""
         if (jsonObj.nodes.size() > 0 && jsonObj.nodes[0] != "") {
             nodeName = jsonObj.nodes[0]
         }
