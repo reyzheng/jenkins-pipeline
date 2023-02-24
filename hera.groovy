@@ -37,6 +37,10 @@ def start(URL, BRANCH, CREDENTIALS) {
     }
     
     node(nodeName) {
+        sh """
+            echo 'Test WS'
+            pwd && ls -al
+        ""
         pipelineAsCode.format(jsonObj.stages)
         load 'Jenkinsfile.restartable'
     }
