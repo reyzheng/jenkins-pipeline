@@ -33,8 +33,9 @@ def start(URL, BRANCH, CREDENTIALS) {
             nodeName = jsonObj.nodes[0]
         }
         pipelineAsCode = load('rtk_stages.groovy')
+        print "Bring to node: ${nodeName}"
     }
-    print "Bring to node: ${nodeName}"
+    
     node(nodeName) {
         pipelineAsCode.format(jsonObj.stages)
         load 'Jenkinsfile.restartable'
