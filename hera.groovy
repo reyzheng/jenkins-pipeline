@@ -15,9 +15,16 @@ def start(URL, BRANCH, CREDENTIALS) {
                 credentialsId: CREDENTIALS
             ]]
         ])
-
-        // change to nodes user specified
-        def jsonObj
+        if (isUnix() == true) {
+            sh 'cp -a * ../.pf-bringup'
+        }
+        else {
+            bat "xcopy .pf-settings\\* .\\.pf-bringup /E /H /Y"
+        }
+    }
+    // change to nodes user specified
+    def jsonObj
+    dir('.pf-bringup') {
         dir('settings') {
             jsonObj = readJSON file: 'global_config.json'
         }
@@ -26,12 +33,11 @@ def start(URL, BRANCH, CREDENTIALS) {
             nodeName = jsonObj.nodes[0]
         }
         print "Bring to node: ${nodeName}"
-
-        node(nodeName) {
-            pipelineAsCode = load('rtk_stages.groovy')
-            pipelineAsCode.format(jsonObj.stages)
-            load 'Jenkinsfile.restartable'
-        }
+    }
+    def pipelineAsCode = load('rtk_stages.groovy')
+    node(nodeName) {
+        pipelineAsCode.format(jsonObj.stages)
+        load 'Jenkinsfile.restartable'
     }
 }
 
