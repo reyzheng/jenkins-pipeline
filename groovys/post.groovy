@@ -46,7 +46,6 @@ def init() {
 }
 
 def execute(pipelineAsCode, postConfig, expandConfig, i) {
-    print "49 " + postConfig.post_scripts_type[i]
     if (postConfig.post_scripts_type[i] == "inline") {
         if (isUnix() == true) {
             sh postConfig.post_scripts[i]
