@@ -6,7 +6,7 @@ cfgGlobal = json.load(fpGlobal)
   
 for stage in cfgGlobal['stages']:
     print(stage)
-    print >>fpCue, "This is a testing!"
+    print("# This is a testing!", file=fpCue)
  
 # Closing file
 fpGlobal.close()
