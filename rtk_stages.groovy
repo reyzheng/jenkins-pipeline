@@ -510,9 +510,12 @@ def daggerSection() {
     sh """
         pwd && ls -al
         python3 cue.py
+	pwd && ls -al
     """
+    stash name: 'dagger-cue', includes: 'dagger.cue'
     def content = "stage('Dagger') {\n"
     content += "    steps {\n"
+    content += "        unstash name: 'dagger-cue'\n"
     content += "        script {\n"
     content += "            sh '''\n"
     content += "                pwd && ls -al\n"
