@@ -508,9 +508,7 @@ def execStage(actionName, stageName) {
 
 def daggerSection() {
     sh """
-        pwd && ls -al
         python3 cue.py
-	pwd && ls -al
     """
     stash name: 'dagger-cue', includes: 'dagger.cue'
     def content = "stage('Dagger') {\n"
@@ -518,7 +516,6 @@ def daggerSection() {
     content += "        unstash name: 'dagger-cue'\n"
     content += "        script {\n"
     content += "            sh '''\n"
-    content += "                pwd && ls -al\n"
     content += "                cat dagger.cue\n"
     content += "                dagger-cue project init\n"
     content += "                dagger-cue project update\n"
