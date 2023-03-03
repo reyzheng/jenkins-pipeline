@@ -517,6 +517,7 @@ def daggerSection() {
     content += "            '''\n"
     content += "        }\n"
     content += "    }\n"
+    content += "}\n"
 
     return content
 }
