@@ -506,6 +506,21 @@ def execStage(actionName, stageName) {
     }        
 }
 
+def daggerSection() {
+    def content = "stage('Dagger') {\n"
+    content += "    steps {\n"
+    content += "        script {\n"
+    content += "            sh '''\n"
+    content += "                dagger-cue project init\n"
+    content += "                dagger-cue project update\n"
+    content += "                dagger-cue do hello --log-format=plain\n"
+    content += "            '''\n"
+    content += "        }\n"
+    content += "    }\n"
+
+    return content
+}
+
 def format(globalConfig) {
     if (! utils) {
         utils = load 'utils.groovy'
@@ -522,6 +537,9 @@ def format(globalConfig) {
         sourceOnly = true
     }
     def content = iterateToFile(stages, sourceOnly)
+    if (globalConfig.dagger) {
+        content += daggerSection()
+    }
     def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
