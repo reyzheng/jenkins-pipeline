@@ -510,13 +510,13 @@ def format(globalConfig) {
         utils = load 'utils.groovy'
     }
     def nodeSection = "def nodeLabel='${globalConfig.nodes[0]}'"
-	def topHalf = readFile file: 'Jenkinsfile.tophalf'
-	def content = iterateToFile(stages)
-	def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
+    def topHalf = readFile file: 'Jenkinsfile.tophalf'
+    def content = iterateToFile(stages)
+    def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
-	//print "Jenkinsfile generated"
-	//print topHalf + content + bottomHalf
-	writeFile file: 'Jenkinsfile.restartable', text: topHalf + content + bottomHalf
+    print "Jenkinsfile generated"
+    print topHalf + content + bottomHalf
+    writeFile file: 'Jenkinsfile.restartable', text: topHalf + content + bottomHalf
 }
 
 def iterateStages(stages) {
