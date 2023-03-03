@@ -507,10 +507,15 @@ def execStage(actionName, stageName) {
 }
 
 def daggerSection() {
+    sh """
+        python3 cue.py
+    """
     def content = "stage('Dagger') {\n"
     content += "    steps {\n"
     content += "        script {\n"
     content += "            sh '''\n"
+    content += "                pwd && ls -al\n"
+    content += "                cat dagger.cue\n"
     content += "                dagger-cue project init\n"
     content += "                dagger-cue project update\n"
     content += "                dagger-cue do hello --log-format=plain\n"
