@@ -403,11 +403,11 @@ def iterateToFile(stages, sourceOnly) {
     def content = ""
     if (stages.size() > 0) {
         for (def stageIdx=0; stageIdx<stages.size(); stageIdx++) {
+            def stageName = stages[stageIdx]
             def actionName = utils.extractActionName(stageName)
 	    if (sourceOnly && actionName != "source") {
                 continue
 	    }
-            def stageName = stages[stageIdx]
 
             def realStageName = stageName
             try {
