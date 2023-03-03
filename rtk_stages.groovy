@@ -396,15 +396,18 @@ def init() {
     pascCleanWs()
 }
 
-def iterateToFile(stages) {
-	if (! utils) {
-		utils = load 'utils.groovy'
-	}
-	def content = ""
+def iterateToFile(stages, sourceOnly) {
+    if (! utils) {
+        utils = load 'utils.groovy'
+    }
+    def content = ""
     if (stages.size() > 0) {
         for (def stageIdx=0; stageIdx<stages.size(); stageIdx++) {
+            def actionName = utils.extractActionName(stageName)
+	    if (sourceOnly && actionName != "source") {
+                continue
+	    }
             def stageName = stages[stageIdx]
-			def actionName = utils.extractActionName(stageName)
 
             def realStageName = stageName
             try {
@@ -518,7 +521,7 @@ def format(globalConfig) {
     if (globalConfig.dagger) {
         sourceOnly = true
     }
-    def content = iterateToFile(stages)
+    def content = iterateToFile(stages, sourceOnly)
     def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
