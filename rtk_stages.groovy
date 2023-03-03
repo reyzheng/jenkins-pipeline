@@ -514,6 +514,10 @@ def format(globalConfig) {
     }
     def nodeSection = "def nodeLabel='$nodeLabel'\n"
     def topHalf = readFile file: 'Jenkinsfile.tophalf'
+    def sourceOnly = false
+    if (globalConfig.dagger) {
+        sourceOnly = true
+    }
     def content = iterateToFile(stages)
     def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
