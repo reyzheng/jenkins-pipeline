@@ -504,18 +504,17 @@ def execStage(actionName, stageName) {
 }
 
 def format(globalConfig) {
-    def stages = globalConfig.stages
-    print "508 " + stages
     if (! utils) {
         utils = load 'utils.groovy'
     }
-    print "512"
-    def nodeSection = "def nodeLabel='${globalConfig.nodes[0]}'"
-    print "514"
+    def stages = globalConfig.stages
+    def nodeLabel = ""
+    if (globalConfig.nodes.size() > 0) {
+        nodeLabel = globalConfig.nodes[0]
+    }
+    def nodeSection = "def nodeLabel='$nodeLabel'\n"
     def topHalf = readFile file: 'Jenkinsfile.tophalf'
-    print "516"
     def content = iterateToFile(stages)
-    print "518"
     def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
