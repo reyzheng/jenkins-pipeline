@@ -94,14 +94,13 @@ def emailNotification() {
 
 def postStage(postStatus) {
     if (modules.configs["post"] == null) {
-        //
     }
     else {
         def nodeName = ""
         if (modules.hasUserDefinedNodes == true) {
             nodeName = modules.global_vars.nodes[0]
         }
-    
+
         def postConfig = modules.configs["post"].settings
         def postPreloads = modules.configs["post"].preloads
         // post scripts
@@ -406,6 +405,36 @@ def iterateToFile(stages) {
         for (def stageIdx=0; stageIdx<stages.size(); stageIdx++) {
             def stageName = stages[stageIdx]
 			def actionName = utils.extractActionName(stageName)
+
+            def realStageName = stageName
+            try {
+                dir('settings') {
+                    stageConfig = readJSON file: "${stageName}_config.json"
+                    realStageName = stageConfig.display_name
+                }
+            }
+            catch(e) {
+            }
+
+            content += "stage('$realStageName') {\n"
+            content += "    steps {\n"
+            content += "        script {\n"
+            content += "            if (!utils) {\n"
+            content += "                utils = load 'utils.groovy'\n";
+            content += "                pf = load('rtk_stages.groovy')\n";
+            content += "                pf.init()\n";
+            content += "            }\n"
+            if (actionName == "composition") {
+                content += "            pf.startComposition(pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
+            }
+            else {
+                content += "            pf.execStage('$actionName', '$stageName')\n"
+            }
+            content += "        }\n"
+            content += "    }\n"
+            content += "}\n"
+
+/*
             if (actionName == "composition") {
 				def compositionCfg
 				dir('settings') {
@@ -436,22 +465,45 @@ def iterateToFile(stages) {
                 content += "                pf = load('rtk_stages.groovy')\n";
                 content += "                pf.init()\n";
                 content += "            }\n"
-                content += "            def action = utils.loadAction('$actionName')\n"
-				content += "            action.func(pf.modules, pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
+                content += "            pf.execStage('$actionName', '$stageName')\n"
+                //content += "            def action = utils.loadAction('$actionName')\n"
+				//content += "            action.func(pf.modules, pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
 				content += "        }\n"
 				content += "    }\n"
 				content += "}\n"
 			}
+*/
         }
     }
 	return content
 }
 
+def execStage(actionName, stageName) {
+    if (modules.coreActions.contains(actionName)) {
+        def action = utils.loadAction(actionName)
+        def stageConfig = modules.configs[stageName].settings
+        def stagePreloads = modules.configs[stageName].preloads
+        action.func(modules, stageConfig, stagePreloads)
+    }
+    else {
+        def action = utils.loadAction(actionName)
+        try {
+            if (modules.easyActions.contains(actionName) == true) {
+                action.func()
+            }
+            else {
+                def stageConfig = modules.configs[stageName].settings
+                def stagePreloads = modules.configs[stageName].preloads
+                action.func(modules, stageConfig, stagePreloads)
+            }
+        }
+        catch (e) {
+            error(message: "${stageName} is unstable " + e)
+        }
+    }        
+}
+
 def format(stages) {
-	sh """
-		echo test2
-		pwd && ls -al
-	"""
 	if (! utils) {
 		utils = load 'utils.groovy'
 	}
@@ -507,6 +559,12 @@ def iterateStages(stages) {
                     action.func(modules, stageConfig, stagePreloads)
                 }
             }
+            else {
+                stage(stageDisplayName) {
+                    execStage(actionName, stageName)
+                }
+            }
+            /*
             else if (modules.coreActions.contains(actionName)) {
                 stage(stageDisplayName) {
                     def action = utils.loadAction(actionName)
@@ -515,12 +573,6 @@ def iterateStages(stages) {
             }
             else {
                 stage(stageDisplayName) {
-                    /*
-                    def dstFileName = "script-" + stageName + "-" + currentBuild.startTimeInMillis
-                    def dstFile = env.WORKSPACE + "/" + dstFileName
-                    writeFile(file: dstFile , text: modules.configs[stageName])
-                    def customStageMethod = load(dstFile)
-                    */
                     def action = utils.loadAction(actionName)
                     try {
                         if (modules.easyActions.contains(actionName) == true) {
@@ -535,6 +587,7 @@ def iterateStages(stages) {
                     }
                 }
             }
+            */
         }
     }	
 }
