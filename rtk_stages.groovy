@@ -503,20 +503,24 @@ def execStage(actionName, stageName) {
     }        
 }
 
-//def format(stages) {
 def format(globalConfig) {
     def stages = globalConfig.stages
+    print "508 " + stages
     if (! utils) {
         utils = load 'utils.groovy'
     }
+    print "512"
     def nodeSection = "def nodeLabel='${globalConfig.nodes[0]}'"
+    print "514"
     def topHalf = readFile file: 'Jenkinsfile.tophalf'
+    print "516"
     def content = iterateToFile(stages)
+    print "518"
     def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
-    print topHalf + content + bottomHalf
-    writeFile file: 'Jenkinsfile.restartable', text: topHalf + content + bottomHalf
+    print nodeSection + topHalf + content + bottomHalf
+    writeFile file: 'Jenkinsfile.restartable', text: nodeSection + topHalf + content + bottomHalf
 }
 
 def iterateStages(stages) {
