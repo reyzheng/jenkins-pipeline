@@ -508,6 +508,7 @@ def execStage(actionName, stageName) {
 
 def daggerSection() {
     sh """
+        pwd && ls -al
         python3 cue.py
     """
     def content = "stage('Dagger') {\n"
