@@ -135,7 +135,7 @@ def func(pipelineAsCode, configs, preloads) {
                                         print "Export general pipeline env. variables(aux.): ${varname} ${varvalue}"
                                         env."$varname" = varvalue
                                     }
-                                    varname = "${env.BUILD_BRANCH}_${varname}"
+                                    varname = "BR${env.BUILD_BRANCH}_${varname}"
                                     print "Export parallel-build pipeline env. variables: ${varname} ${varvalue}"
                                     env."$varname" = varvalue
                                 }

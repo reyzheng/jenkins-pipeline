@@ -38,7 +38,7 @@ def func(pipelineAsCode, configs, preloads) {
                     doGenerateSubmoduleConfigurations: false, 
                     extensions: [
                         [$class: 'LocalBranch', 
-                            localBranch: ""],
+                            localBranch: "test-branch"],
                         [$class: 'SubmoduleOption', 
                             disableSubmodules: false, 
                             parentCredentials: true, 
@@ -48,7 +48,7 @@ def func(pipelineAsCode, configs, preloads) {
                         [$class: 'CloneOption',
                             depth: configs.clone_depth,
                             shallow: shallowClone,
-                            honorRefspec: true]], 
+                            honorRefspec: configs.honor_refspec]], 
                     userRemoteConfigs: [[
                         url: "${configs.url}", 
                         refspec: "${configs.refspecs}",
@@ -60,13 +60,13 @@ def func(pipelineAsCode, configs, preloads) {
                 checkout(scm: [$class: 'GitSCM', 
                     extensions: [
                         [$class: 'LocalBranch', 
-                            localBranch: ""],
+                            localBranch: "test-branch"],
                         [$class: 'SubmoduleOption', 
                             disableSubmodules: true],
                         [$class: 'CloneOption',
                             depth: configs.clone_depth,
                             shallow: shallowClone,
-                            honorRefspec: true]],
+                            honorRefspec: configs.honor_refspec]],
                     userRemoteConfigs: [[
                         url: "${configs.url}", 
                         refspec: "${configs.refspecs}",
@@ -78,12 +78,14 @@ def func(pipelineAsCode, configs, preloads) {
                 // set upstream for URF SBOM generation
                 if (isUnix()) {
                     sh """
-                        git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
+                        #git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
+                        git branch --set-upstream-to=origin/${configs.branch} test-branch
                     """
                 }
                 else {
                     bat """
-                        git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
+                        #git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
+                        git branch --set-upstream-to=origin/${configs.branch} test-branch
                     """
                 }
             }

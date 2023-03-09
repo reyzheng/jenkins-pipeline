@@ -397,17 +397,18 @@ def init() {
 }
 
 def iterateToFile(stages, sourceOnly) {
-    if (! utils) {
-        utils = load 'utils.groovy'
-    }
+	if (! utils) {
+		utils = load 'utils.groovy'
+	}
+    def stageConfig
     def content = ""
     if (stages.size() > 0) {
         for (def stageIdx=0; stageIdx<stages.size(); stageIdx++) {
             def stageName = stages[stageIdx]
-            def actionName = utils.extractActionName(stageName)
-	    if (sourceOnly && actionName != "source") {
+			def actionName = utils.extractActionName(stageName)
+            if (sourceOnly == true && actionName != "source") {
                 continue
-	    }
+            }
 
             def realStageName = stageName
             try {
@@ -419,6 +420,42 @@ def iterateToFile(stages, sourceOnly) {
             catch(e) {
             }
 
+            if (actionName == "composition" && stageConfig.run_type == "SEQUENTIAL_SPLIT") {
+                for (def i=0; i<stageConfig.stages.size(); i++) {
+                    content += "stage('$realStageName-$i') {\n"
+                    content += "    steps {\n"
+                    content += "        script {\n"
+                    content += "            if (!utils) {\n"
+                    content += "                utils = load 'utils.groovy'\n";
+                    content += "                pf = load('rtk_stages.groovy')\n";
+                    content += "                pf.init()\n";
+                    content += "            }\n"
+                    content += "            pf.startCompositionSplit(pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads, $i)\n"
+                    content += "        }\n"
+                    content += "    }\n"
+                    content += "}\n"
+                }
+            }
+            else {
+                content += "stage('$realStageName') {\n"
+                content += "    steps {\n"
+                content += "        script {\n"
+                content += "            if (!utils) {\n"
+                content += "                utils = load 'utils.groovy'\n";
+                content += "                pf = load('rtk_stages.groovy')\n";
+                content += "                pf.init()\n";
+                content += "            }\n"
+                if (actionName == "composition") {
+                    content += "        pf.startComposition(pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
+                }
+                else {
+                    content += "        pf.execStage('$actionName', '$stageName')\n"
+                }
+                content += "        }\n"
+                content += "    }\n"
+                content += "}\n"
+            }
+            /*
             content += "stage('$realStageName') {\n"
             content += "    steps {\n"
             content += "        script {\n"
@@ -436,46 +473,7 @@ def iterateToFile(stages, sourceOnly) {
             content += "        }\n"
             content += "    }\n"
             content += "}\n"
-
-/*
-            if (actionName == "composition") {
-				def compositionCfg
-				dir('settings') {
-					compositionCfg = readJSON file: "${stageName}_config.json"
-				}
-                compositionCfg.parallel_parameters = utils.extractParallelParameters(compositionCfg.parallel_parameters)
-                compositionCfg.parallel_excludes = utils.extractParameters(compositionCfg.parallel_excludes)
-
-				content += "stage('$stageName') {\n"
-                content += "    steps {\n"
-                content += "        script {\n"
-                content += "            if (!utils) {\n"
-                content += "                utils = load 'utils.groovy'\n";
-                content += "                pf = load('rtk_stages.groovy')\n";
-                content += "                pf.init()\n";
-                content += "            }\n"
-				content += "            pf.startComposition(pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
-                content += "        }\n"
-                content += "    }\n"
-				content += "}\n"
-            }
-			else {
-				content += "stage('$stageName') {\n"
-				content += "    steps {\n"
-				content += "        script {\n"
-                content += "            if (!utils) {\n"
-                content += "                utils = load 'utils.groovy'\n";
-                content += "                pf = load('rtk_stages.groovy')\n";
-                content += "                pf.init()\n";
-                content += "            }\n"
-                content += "            pf.execStage('$actionName', '$stageName')\n"
-                //content += "            def action = utils.loadAction('$actionName')\n"
-				//content += "            action.func(pf.modules, pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
-				content += "        }\n"
-				content += "    }\n"
-				content += "}\n"
-			}
-*/
+            */
         }
     }
 	return content
@@ -506,28 +504,6 @@ def execStage(actionName, stageName) {
     }        
 }
 
-def daggerSection() {
-    sh """
-        python3 cue.py
-    """
-    stash name: 'dagger-cue', includes: 'dagger.cue'
-    def content = "stage('Dagger') {\n"
-    content += "    steps {\n"
-    content += "        unstash name: 'dagger-cue'\n"
-    content += "        script {\n"
-    content += "            sh '''\n"
-    content += "                cat dagger.cue\n"
-    content += "                dagger-cue project init\n"
-    content += "                dagger-cue project update\n"
-    content += "                dagger-cue do hello --log-format=plain\n"
-    content += "            '''\n"
-    content += "        }\n"
-    content += "    }\n"
-    content += "}\n"
-
-    return content
-}
-
 def format(globalConfig) {
     if (! utils) {
         utils = load 'utils.groovy'
@@ -544,9 +520,6 @@ def format(globalConfig) {
         sourceOnly = true
     }
     def content = iterateToFile(stages, sourceOnly)
-    if (globalConfig.dagger) {
-        content += daggerSection()
-    }
     def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
@@ -647,7 +620,7 @@ def escapedBashVariablename(str) {
     return ret
 }
 
-def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName) {
+def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName, cleanWS) {
     def parallelParams = []
     def parallelValues = [:]
     for (def key in parallelParameters.keySet()) {
@@ -740,7 +713,9 @@ def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName) {
                 ws (customWS) {
                     withEnv(envvar) {
                         stage(stageName) {
-                            pascCleanWs()
+                            if (cleanWS) {
+                                pascCleanWs()
+                            }
                             iterateStages(stages)
                         }
                     }
@@ -754,9 +729,20 @@ def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName) {
     }
 }
 
+def startCompositionSplit(stageConfig, stagePreloads, idx) {
+    def stages = []
+    stages << stageConfig.stages[idx]
+    if (idx == 0) {
+        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stages, stageConfig.node, true)
+    }
+    else {
+        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stages, stageConfig.node, false)
+    }
+}
+
 def startComposition(stageConfig, stagePreloads) {
     if (stageConfig.run_type == "SEQUENTIAL") {
-        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stageConfig.stages, stageConfig.node)
+        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stageConfig.stages, stageConfig.node, true)
     }
     else {
         def jobs = [:]
@@ -797,7 +783,7 @@ def start() {
 
     if (modules.global_vars.parallelBuild == true) {
         def emptyList = []
-        parallelBuild(modules.global_vars.parallel_parameters, emptyList, modules.global_vars.parallel_stages, nodeName)
+        parallelBuild(modules.global_vars.parallel_parameters, emptyList, modules.global_vars.parallel_stages, nodeName, true)
     }
     else {
         if (nodeName == "" || env.NODE_NAME == nodeName) {

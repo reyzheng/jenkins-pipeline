@@ -1,3 +1,27 @@
+def parseUrl(url) {
+    def ret = []
+
+    // separate url and path, ssh://psp.sdlc.rd.realtek.com:29418/test/test ->
+    // ret[0] ssh://psp.sdlc.rd.realtek.com:29418
+    // ret[1] test/test
+    def tokens = url.split("//")
+    if (tokens.size() == 1) {
+        // git@github.com:reyzheng/test.git
+        tokens = url.split(":")
+        ret << tokens[0]
+        ret << tokens[1]
+    }
+    else {
+        def protocol = tokens[0] // https: or ssh:
+        def addr = tokens[1].substring(0, tokens[1].indexOf('/')) // psp.sdlc.rd.realtek.com:29418
+        def path = tokens[1].substring(tokens[1].indexOf('/') + 1 , tokens[1].length()) // test/test
+        ret << "${protocol}//${addr}"
+        ret << path
+    }
+
+    return ret
+}
+
 def stashScriptedParamScript(plainStageName, param, nonce) {
     if (isDynamicParameter(param) == true) {
         dir ("scripts") {

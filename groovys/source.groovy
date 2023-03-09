@@ -13,6 +13,7 @@ def init(stageName) {
         scm_refspecs: [""],
         scm_git_clone_depth: [0],
         scm_git_recursivesubmodules: [false],
+        scm_git_honor_refspec: [false],
         scm_repo_manifest_files: ["default.xml"],
         scm_repo_manifest_groups: [""],
         scm_repo_manifest_currentbranchs: [true],
@@ -27,13 +28,16 @@ def init(stageName) {
 
     def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
-    dir ("groovys") {
+    dir("groovys") {
         if (config.settings.scm_types.contains("git")) {
             stash name: "stash-actions-git", includes: "git.groovy"
         }
         if (config.settings.scm_types.contains("repo")) {
             stash name: "stash-actions-repo", includes: "repo.groovy"
         }
+    }
+    dir("pipeline_scripts") {
+        stash name: "git-checkout-parent", includes: "git-checkout-parent.sh"
     }
 
     // stash scripted params' script file
@@ -42,29 +46,6 @@ def init(stageName) {
     return config
 }
 
-def parseUrl(url) {
-    def ret = []
-
-    // separate url and path, ssh://psp.sdlc.rd.realtek.com:29418/test/test ->
-    // ret[0] ssh://psp.sdlc.rd.realtek.com:29418
-    // ret[1] test/test
-    def tokens = url.split("//")
-    if (tokens.size() == 1) {
-        // git@github.com:reyzheng/test.git
-        tokens = url.split(":")
-        ret << tokens[0]
-        ret << tokens[1]
-    }
-    else {
-        def protocol = tokens[0] // https: or ssh:
-        def addr = tokens[1].substring(0, tokens[1].indexOf('/')) // psp.sdlc.rd.realtek.com:29418
-        def path = tokens[1].substring(tokens[1].indexOf('/') + 1 , tokens[1].length()) // test/test        
-        ret << "${protocol}//${addr}"
-        ret << path
-    }
-
-    return ret
-}
 
 def scm_checkout(pipelineAsCode, vars, i) {
     def scmMain = vars.scm_main
@@ -73,7 +54,7 @@ def scm_checkout(pipelineAsCode, vars, i) {
     def utils = load "utils.groovy"
     def url = utils.captureStdout("echo ${vars.scm_urls[i]}", isUnix())
     vars.scm_urls[i] = url[0]
-
+    
     echo "checkout repository ${vars.scm_types[i]} ${vars.scm_urls[i]}"
     if (vars.scm_types[i] == "git") {
         if (vars.scm_branchs[i] == "") {
@@ -93,6 +74,7 @@ def scm_checkout(pipelineAsCode, vars, i) {
             dst: "",
             credentials: "",
             refspecs: "",
+            honor_refspec: false,
             clone_depth: 0,
             submodules: false,
             preserve: false
@@ -120,6 +102,17 @@ def scm_checkout(pipelineAsCode, vars, i) {
         if (vars.scm_git_clone_depth[i]) {
             gitConfigs.clone_depth = vars.scm_git_clone_depth[i]
         }
+        if (vars.scm_git_honor_refspec[i]) {
+            gitConfigs.honor_refspec = vars.scm_git_honor_refspec[i]
+        }
+        def varname
+        if (env.BUILD_BRANCH) {
+            varname = "${env.BUILD_BRANCH}_SOURCE_DIR${i}"
+        }
+        else {
+            varname = "SOURCE_DIR${i}"
+        }
+        env."${varname}" = "${WORKSPACE}/${gitConfigs.dst}"
         def action = utils.loadAction("git")
         action.func(pipelineAsCode, gitConfigs, null)
 
@@ -152,7 +145,7 @@ def scm_checkout(pipelineAsCode, vars, i) {
         }
 
         if (pipelineAsCode.srcRevisions.containsKey(saveIdx) == false) {
-            def urlTokens = parseUrl(gitConfigs.url)
+            def urlTokens = utils.parseUrl(gitConfigs.url)
             pipelineAsCode.srcRevisions."${saveIdx}".addr = urlTokens[0]
             pipelineAsCode.srcRevisions."${saveIdx}".name = urlTokens[1]
             pipelineAsCode.srcRevisions."${saveIdx}".path = vars.scm_dsts[scmIdx]
@@ -246,6 +239,10 @@ def func(pipelineAsCode, stageConfigsRaw, stagePreloads) {
             return 
         }
 
+        env."PF_SOURCE_DST_${i}" = ""
+        if (stageConfigs.scm_dsts.size() > i) {
+            env."PF_SOURCE_DST_${i}" = stageConfigs.scm_dsts[i]
+        }
         scm_checkout(pipelineAsCode, stageConfigs, i)
     }
 }
