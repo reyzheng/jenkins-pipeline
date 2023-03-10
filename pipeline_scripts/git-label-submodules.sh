@@ -1,0 +1,1 @@
+echo "git-label-submodules"
