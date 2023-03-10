@@ -21,13 +21,14 @@ dagger.#Plan & {
 	//}
 	client: {
 		filesystem: {
-			"./": read: {
+			//"./": read: {
+			"./source": read: {
 				contents: dagger.#FS
 				exclude: [
-					"README.md",
-					"_build",
-					"pipeline.cue",
-					"node_modules",
+					//"README.md",
+					//"_build",
+					//"pipeline.cue",
+					//"node_modules",
 				]
 			}
 			"./_build": write: contents: actions.build.contents.output
@@ -92,9 +93,9 @@ dagger.#Plan & {
 				script: contents: #"""
 					#yarn run build
 					pwd && ls -al
-					mkdir build
-					gcc source/test.c -o build/test
-					pwd && ls -al
+					#mkdir build
+					#gcc source/test.c -o build/test
+					#pwd && ls -al
 					"""#
 			}
 
