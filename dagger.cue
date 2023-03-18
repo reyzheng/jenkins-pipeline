@@ -94,7 +94,7 @@ dagger.#Plan & {
 					#yarn run build
 					pwd && ls -al
 					#mkdir build
-					#gcc source/test.c -o build/test
+					gcc source/test.c -o build/test
 					#pwd && ls -al
 					"""#
 			}
