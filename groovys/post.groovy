@@ -14,7 +14,7 @@ def init() {
 
     def config
     def hasPostGroovy = fileExists "settings/post_config.groovy"
-    def hasPostJson = fileExists "settings/post_config.groovy"
+    def hasPostJson = fileExists "settings/post_config.json"
     if (hasPostGroovy || hasPostJson) {
         config = utils.commonInit("post", defaultConfigs)
     }
@@ -22,30 +22,32 @@ def init() {
         config = utils.commonInit("global", defaultConfigs)
     }
     config.preloads.actionName = "post"
-    config.preloads.scriptTypes = config.settings.post_scripts_type
-    config.preloads.scripts = config.settings.post_scripts
     def ite
-    for (ite=0; ite<config.preloads.scriptTypes.size(); ite++) {
-        if (config.preloads.scriptTypes[ite].trim() == "") {
+    for (ite=0; ite<config.settings.post_scripts_type.size(); ite++) {
+        if (config.settings.post_scripts_type[ite].trim() == "") {
             continue
         }
-        if (config.preloads.scriptTypes[ite] == "inline" || 
-            config.preloads.scriptTypes[ite] == "action") {
+        if (config.settings.post_scripts_type[ite] == "inline" || 
+            config.settings.post_scripts_type[ite] == "action") {
         }
         else {
-            config.preloads.scripts[ite] = readFile(file: "scripts/" + config.preloads.scripts[ite])
+            dir ('scripts') {
+                stash name: "pf-post-scripts-${ite}", includes: config.settings.post_scripts[ite]
+            }
         }
     }
-
     // load email body
     if (config.settings.mail_body.trim() != "") {
-        config.preloads.mail_body = readFile(file: "scripts/" + config.settings.mail_body)
+        dir ('scripts') {
+            stash name: "pf-post-mail-body", includes: config.settings.mail_body
+            //config.preloads.mail_body = readFile(file: "scripts/" + )
+        }
     }
 
     return config
 }
 
-def execute(pipelineAsCode, postConfig, expandConfig, i) {
+def execute(pipelineAsCode, postConfig, i) {
     if (postConfig.post_scripts_type[i] == "inline") {
         if (isUnix() == true) {
             sh postConfig.post_scripts[i]
@@ -63,25 +65,17 @@ def execute(pipelineAsCode, postConfig, expandConfig, i) {
         action.func(pipelineAsCode, pipelineAsCode.configs[actionName].settings, pipelineAsCode.configs[actionName].preloads)
     }
     else {
-        // write to a temp file in workspace
-        def dstFileName = "script-" + expandConfig.actionName + "-" + currentBuild.startTimeInMillis
-        def dstFile
-        if (isUnix() == true) {
-            dstFile = env.WORKSPACE + "/" + dstFileName
-        }
-        else {
-            dstFile = env.WORKSPACE + "\\" + dstFileName
-        }
-        writeFile(file: dstFile , text: expandConfig.scripts[i])
+        unstash name: "pf-post-scripts-${i}"
+        def dstFile = postConfig.post_scripts[i]
         
-        if (expandConfig.scriptTypes[i] == "source") {
+        if (postConfig.post_scripts_type[i] == "source") {
             sh ". " + dstFile
         }
-        else if (expandConfig.scriptTypes[i] == "groovy") {
+        else if (postConfig.post_scripts_type[i] == "groovy") {
             def externalMethod = load(dstFile)
             externalMethod.func()
         }
-        else if (expandConfig.scriptTypes[i] == "file") {
+        else if (postConfig.post_scripts_type[i] == "file") {
             if (isUnix() == true) {
                 sh "sh '${dstFile}'"
             }
