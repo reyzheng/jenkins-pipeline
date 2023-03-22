@@ -1,13 +1,16 @@
 import groovy.transform.Field
 
-@Field groovyPath = "groovys"
-@Field scriptPath = "scripts"
 @Field settingPath = "settings"
 @Field modules = [:]
 @Field utils
 
 // modules.global_vars.stages: all stages found in global_config, for stage iteration, corresponding configs finding
-// modules.global_vars.stagesExtended: all stages found in global_config(post_config), composition*_config, for user-defined action finding
+
+// env.PF_PRESERVE_SOURCE
+// env.PF_GERRIT_CREDENTIALS
+// env.PF_SOURCE_REVISION
+// env.PF_MAIN_SOURCE_NAME
+// env.PF_MAIN_SOURCE_PLAINNAME
 
 def loadGlobalSettings() {
     def defaultConfigs = [
@@ -23,14 +26,6 @@ def loadGlobalSettings() {
         blackduck_credentials: "",
         sms_account: "",
         sms_credentials: "",
-        //post_scripts_condition: [],
-        //post_scripts_type: [],
-        //post_scripts: [],
-        //mail_enabled: false,
-        //mail_conditions: ["always"],
-        //mail_subject: "",
-        //mail_body: "",
-        //mail_recipient: "",
         scriptableParams: ["preserve_source"]
     ]
     def globalVarsRaw = utils.commonInit("global", defaultConfigs)
@@ -38,8 +33,10 @@ def loadGlobalSettings() {
     modules.global_vars = [:]
     utils.unstashScriptedParamScripts("global", globalVarsRaw.settings, modules.global_vars)
 
+    env.PF_PRESERVE_SOURCE = modules.global_vars.preserve_source
+    env.PF_GERRIT_CREDENTIALS = modules.global_vars.gerrit_credentials
+
     modules.global_vars.parallelBuild = false
-    modules.global_vars.stagesExtended = []
     // re-construct stages from parallel_stages, standalone_stages
     try {
         if (modules.global_vars.parallel_stages.size() > 0) {
@@ -62,22 +59,12 @@ def loadGlobalSettings() {
     }
 
     // load logParserRule
-    dir (scriptPath) {
+    dir ('scripts') {
         modules.hasLogParserRule = fileExists "logParserRule"
         if (modules.hasLogParserRule == true) {
             stash name: "stash-global-logparser", includes: "logParserRule"
         }
     }
-
-    /*
-    // Default coverity checkers, report config yaml
-    modules.coverityCheckersCustom = ""
-    def hasCustomChecker = fileExists "scripts/checkers_custom"
-    if (hasCustomChecker == true) {
-        modules.coverityCheckersCustom = readFile(file: "scripts/checkers_custom")
-    }
-    stash name: "stash-global-coverity", includes: "rtk_coverity/checkers_default,rtk_coverity/checkers_default-light,rtk_coverity/checkers_medium,rtk_coverity/checkers_medium-light,rtk_coverity/checkers_heavy"
-    */
 }
 
 def preparePostStage() {
@@ -102,18 +89,17 @@ def postStage(postStatus) {
         }
 
         def postConfig = modules.configs["post"].settings
-        def postPreloads = modules.configs["post"].preloads
         // post scripts
         for (def i=0; i<postConfig.post_scripts_condition.size(); i++) {
             if (postConfig.post_scripts_condition[i] == postStatus) {
                 def action = utils.loadAction("post")
                 if (nodeName == "" || env.NODE_NAME == nodeName) {
                     // avoid unnecessary change node
-                    action.execute(modules, postConfig, postPreloads, i)
+                    action.execute(modules, postConfig, i)
                 }
                 else {
                     node(nodeName) {
-                        action.execute(modules, postConfig, postPreloads, i)
+                        action.execute(modules, postConfig, i)
                     }
                 }
             }
@@ -127,15 +113,16 @@ def postStage(postStatus) {
 
 def sendEmail() {
     def postConfig = modules.configs["post"].settings
-    def postPreloads = modules.configs["post"].preloads
+    //def postPreloads = modules.configs["post"].preloads
     if (postConfig.mail_enabled == true) {
-        emailbody = """${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':
+        def emailbody = """${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':
                         Check console output at ${env.BUILD_URL}"""
         if (postConfig.mail_body != "") {
-            def dstFileName = "script-mailbody-" + currentBuild.startTimeInMillis
-            def dstFile = env.WORKSPACE + modules.separator + dstFileName
-            writeFile(file: dstFile , text: postPreloads.mail_body)
-            def externalMailMethod = load(dstFile)
+            def externalMailMethod
+            dir ('.pf-post') {
+                unstash name: "pf-post-mail-body"
+                externalMailMethod = load(postConfig.mail_body)
+            }
             emailbody = externalMailMethod.func()
         }
 
@@ -155,15 +142,17 @@ def sendEmail() {
 def loadCoreActions() {
     // lookup files under groovyPath
     def actionFiles
-    actionFiles = findFiles(glob: "${groovyPath}${modules.separator}*.groovy")
-    
-    print "Found actions " + actionFiles
-    for (actionFile in actionFiles) {
-        def actionFileName = actionFile.toString()
-        def actionName = actionFileName.split(/\\|\/|\./)
-        // groovys/source.groovy -> groovy source groovy
-        actionName = actionName[1]
-        modules.coreActions << actionName
+
+    dir ('groovys') {
+        actionFiles = findFiles(glob: "*.groovy")
+        print "Found actions " + actionFiles
+        for (actionFile in actionFiles) {
+            def actionFileName = actionFile.toString()
+            def actionName = actionFileName.split(/\\|\/|\./)
+            // groovys/source.groovy -> groovy source groovy
+            actionName = actionName[1]
+            modules.coreActions << actionName
+        }
     }
     // TODO: ugly code
     modules.coreActions += ["config", "prebuild", "build", "postbuild", "test"]
@@ -183,17 +172,19 @@ def loadUserConfig(configFileName) {
     if (modules.actionStashed.contains(actionName) == false) {
         def stashStatus = false
 
-        dir (scriptPath) {
-            def customAction = fileExists "${realActionName}.groovy"
-            if (customAction == true) {
+        dir ('groovys') {
+            // core actions
+            def frameworkAction = fileExists "${realActionName}.groovy"
+            if (frameworkAction == true) {
                 stash name: "stash-actions-${actionName}", includes: "${realActionName}.groovy"
                 stashStatus = true
             }
         }
         if (stashStatus == false) {
-            dir (groovyPath) {
-                def frameworkAction = fileExists "${realActionName}.groovy"
-                if (frameworkAction == true) {
+            // user-defined actions
+            dir ('scripts') {
+                def customAction = fileExists "${realActionName}.groovy"
+                if (customAction == true) {
                     stash name: "stash-actions-${actionName}", includes: "${realActionName}.groovy"
                     stashStatus = true
                 }
@@ -202,42 +193,25 @@ def loadUserConfig(configFileName) {
         modules.actionStashed << actionName
     }
 
-    /*
-    if (actionName in modules.coreActions == false) {
-        // skip user defined actions
-        return
-    }
-    */
     // user defined actions could also load configs
+    print "loadUserConfigs: ${stageName}(${actionName})"
+    def action = utils.loadAction(actionName)
     try {
-        def configExists = false
-        def jsonConfigExists = false
-        dir (settingPath) {
-            configExists = fileExists "${stageName}_config.groovy"
-            jsonConfigExists = fileExists "${stageName}_config.json"
-        }
-        if (configExists == true || jsonConfigExists == true) {
-            print "loadUserConfigs: ${stageName}(${actionName}) start"
-            def action = utils.loadAction(actionName)
-            modules.configs[stageName] = action.init(stageName)
-            print "loadUserConfigs: ${stageName}(${actionName}) configured"
-            if (actionName == "source") {
-                modules.mainSourceStage = stageName
-                modules.mainSourcePlainStageName = modules.configs[stageName].preloads.plainStageName
-            }
-        }
-        else {
-            modules.easyActions << actionName
-        }
+        modules.configs[stageName] = action.init(stageName)
+        print "loadUserConfigs: ${stageName}(${actionName}) configured"
     }
     catch (e) {
-        // stage not configured
+        // easyActions has no configurations
         unstable("${stageName} (${actionName}) init. failed " + e)
     }
 
     if (actionName == "composition") {
-        for (def subStage in modules.configs[stageName].settings.stages) {
-            modules.global_vars.stagesExtended << subStage
+        def stageConfig
+        dir ('.pf-global') {
+            unstash name: "pf-${stageName}-config"
+            stageConfig = readJSON file: 'temporal.json'
+        }
+        for (def subStage in stageConfig.stages) {
             loadUserConfig(settingPath + "/${subStage}_config.groovy")
         }
     }
@@ -248,7 +222,6 @@ def loadUserConfigs() {
     def requiredConfigs = []
     for (def i=0; i<modules.global_vars.stages.size(); i++) {
         def stage = modules.global_vars.stages[i]
-        modules.global_vars.stagesExtended << stage
         requiredConfigs << settingPath + "/${stage}_config.groovy"
     }
     
@@ -264,7 +237,7 @@ def loadUserConfigs() {
     }
 
     // Load post_config
-    dir (groovyPath) {
+    dir ('groovys') {
         stash name: "stash-actions-post", includes: "post.groovy"
     }
     def postAction = utils.loadAction("post")
@@ -273,7 +246,6 @@ def loadUserConfigs() {
     for (def i=0; i<modules.configs["post"].settings.post_scripts_type.size(); i++) {
         if (modules.configs["post"].settings.post_scripts_type[i] == "action") {
             def stage = modules.configs["post"].settings.post_scripts[i]
-            modules.global_vars.stagesExtended << stage
             requiredConfigs << settingPath + "/${stage}_config.groovy"
         }
     }
@@ -282,15 +254,6 @@ def loadUserConfigs() {
     print "Total configs to be loaded " + requiredConfigs
     for (requiredConfig in requiredConfigs) {
         loadUserConfig(requiredConfig)
-    }
-
-    // here we got source configuration, initialize modules.srcRevisions
-    try {
-        for (def i=0; i<modules.configs[modules.mainSourceStage].settings.scm_counts; i++) {
-            modules.srcRevisions."${i}" = [:]
-        }
-    }
-    catch (e) { // invalid source configuration
     }
 }
 
@@ -327,20 +290,24 @@ def pascCleanWs() {
         return
     }
     if (modules.global_vars.preserve_source == true) {
-        try {
-            for (def i=0; i<modules.configs[modules.mainSourceStage].settings.scm_counts; i++) {
-                def exclude = [:]
-                def scmDst = modules.configs[modules.mainSourceStage].settings.scm_dsts[i]
+        if (env.PF_MAIN_SOURCE_NAME) {
+            def sourceNames = env.PF_MAIN_SOURCE_NAME.split(',')
+            def sourcePlainNames = env.PF_MAIN_SOURCE_PLAINNAME.split(',')
+            for (def j=0; j<sourceNames.size(); j++) {
+                def sourceName = sourceNames[j]
+                def sourcePlainName = sourcePlainNames[j]
+                for (def i=0; i<modules.configs[sourceName].settings.scm_counts; i++) {
+                    def exclude = [:]
+                    def scmDst = modules.configs[sourceName].settings.scm_dsts[i]
 
-                // TODO: handle parameterized scm_dsts, like ${TEXT_DST}, ugly
-                scmDst = utils.extractScriptedParameter(scmDst, "stash-${modules.mainSourcePlainStageName}-params-scm_dsts-${i}")
+                    // TODO: handle parameterized scm_dsts, like ${TEXT_DST}, ugly
+                    scmDst = utils.extractScriptedParameter(scmDst, "stash-${sourcePlainName}-params-scm_dsts-${i}")
 
-                exclude.pattern = "${scmDst}/**"
-                exclude.type = "EXCLUDE"
-                excludes << exclude
+                    exclude.pattern = "${scmDst}/**"
+                    exclude.type = "EXCLUDE"
+                    excludes << exclude
+                }
             }
-        }
-        catch(e) { // invalid source configuration
         }
     }
     print "Clean WS, excludes: " + excludes
@@ -348,13 +315,8 @@ def pascCleanWs() {
 }
 
 def init() {
+    stash name: "stash-script-utils", includes: "utils.groovy"
     utils = load "utils.groovy"
-    if (isUnix() == true) {
-        modules.separator = "/"
-    }
-    else {
-        modules.separator = "\\"
-    }
     // store exec. result at each stage
     env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS = ""
     env.PIPELINE_AS_CODE_STAGE_TEST_RESULTS = ""
@@ -362,37 +324,23 @@ def init() {
     // load global_config
     loadGlobalSettings()
 
-    modules.global_vars.buildBranches = []
-    modules.srcRevisions = [:]
-    modules.srcRevisions.manifest = null
     // stage pre-initialization is necessary:
     // pipeline from scm was done at master node, 
     // groovy loading would be failed after jobs dispatched to agents
     modules.actions = [:]
     modules.coreActions = []
-    modules.easyActions = []
     modules.actionStashed = []
     modules.configs = [:]
 
     loadCoreActions()
     loadUserConfigs()
 
-    // search for hsm actions
-    for (def i=0; i<modules.global_vars.stagesExtended.size(); i++) {
-        def stageName = modules.global_vars.stagesExtended[i]
-        def actionName = utils.extractActionName(stageName)
-        /*
-        if ((actionName in modules.coreActions) == false) {
-            // custom actions, load groovy file
-            modules.configs[stageName] = readFile(file: "scripts/${actionName}.groovy")
-        }
-        */
-	}
-
     // clean workspace
     // stash utils before clean workspace
     // re-write logParserRule after initialization
-    stash name: "stash-script-utils", includes: "utils.groovy"
+    dir ('pipeline_scripts') {
+        stash name: 'stash-script-bdsh', includes: 'bdsh.sh'
+    }
     pascCleanWs()
 }
 
@@ -446,7 +394,7 @@ def iterateToFile(stages, sourceOnly) {
                 content += "                pf.init()\n";
                 content += "            }\n"
                 if (actionName == "composition") {
-                    content += "        pf.startComposition(pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
+                    content += "        pf.startComposition('$stageName')\n"
                 }
                 else {
                     content += "        pf.execStage('$actionName', '$stageName')\n"
@@ -455,47 +403,35 @@ def iterateToFile(stages, sourceOnly) {
                 content += "    }\n"
                 content += "}\n"
             }
-            /*
-            content += "stage('$realStageName') {\n"
-            content += "    steps {\n"
-            content += "        script {\n"
-            content += "            if (!utils) {\n"
-            content += "                utils = load 'utils.groovy'\n";
-            content += "                pf = load('rtk_stages.groovy')\n";
-            content += "                pf.init()\n";
-            content += "            }\n"
-            if (actionName == "composition") {
-                content += "            pf.startComposition(pf.modules.configs['$stageName'].settings, pf.modules.configs['$stageName'].preloads)\n"
-            }
-            else {
-                content += "            pf.execStage('$actionName', '$stageName')\n"
-            }
-            content += "        }\n"
-            content += "    }\n"
-            content += "}\n"
-            */
         }
     }
 	return content
 }
 
 def execStage(actionName, stageName) {
+    def skinnyActions = ['jira', 'source']
     if (modules.coreActions.contains(actionName)) {
         def action = utils.loadAction(actionName)
         def stageConfig = modules.configs[stageName].settings
         def stagePreloads = modules.configs[stageName].preloads
-        action.func(modules, stageConfig, stagePreloads)
+        // TODO: quick actions
+        if (skinnyActions.contains(actionName)) {
+            action.func(null, stageConfig, stagePreloads)
+        }
+        else {
+            action.func(modules, stageConfig, stagePreloads)
+        }
     }
     else {
         def action = utils.loadAction(actionName)
         try {
-            if (modules.easyActions.contains(actionName) == true) {
-                action.func()
-            }
-            else {
+            if (modules.configs[stageName]) {
                 def stageConfig = modules.configs[stageName].settings
                 def stagePreloads = modules.configs[stageName].preloads
                 action.func(modules, stageConfig, stagePreloads)
+            }
+            else {
+                action.func()
             }
         }
         catch (e) {
@@ -533,12 +469,6 @@ def iterateStages(stages) {
             def stageName = stages[stageIdx]
             print "iterateStages: stage $stageName"
             def actionName = utils.extractActionName(stageName)
-            if (modules.easyActions.contains(actionName) == false  && modules.configs[stageName] == null) {
-                // configurations is necessary for non-easy actions
-                print "skip $stageName (not configured)"
-                continue
-            }
-
             def stageConfig
             def stagePreloads
             try {
@@ -561,7 +491,7 @@ def iterateStages(stages) {
             }
 
             if (actionName == "composition") {
-                startComposition(stageConfig, stagePreloads)
+                startComposition(stageName)
             }
             else if (actionName == "coverity" || 
                         (actionName == "build" && modules.configs["coverity"] != null && modules.configs["coverity"].settings.coverity_scan_enabled == true)) {
@@ -575,30 +505,6 @@ def iterateStages(stages) {
                     execStage(actionName, stageName)
                 }
             }
-            /*
-            else if (modules.coreActions.contains(actionName)) {
-                stage(stageDisplayName) {
-                    def action = utils.loadAction(actionName)
-                    action.func(modules, stageConfig, stagePreloads)
-                }
-            }
-            else {
-                stage(stageDisplayName) {
-                    def action = utils.loadAction(actionName)
-                    try {
-                        if (modules.easyActions.contains(actionName) == true) {
-                            action.func()
-                        }
-                        else {
-                            action.func(modules, stageConfig, stagePreloads)
-                        }
-                    }
-                    catch (e) {
-                        error(message: "${stageName} is unstable " + e)
-                    }
-                }
-            }
-            */
         }
     }	
 }
@@ -664,6 +570,8 @@ def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName, cleanW
     }
 
     def jobs = [:]
+    def parallelInfo = [:]
+    parallelInfo.branches = []
     for (def i=0; i<totalCombinations; i++) {
         def stageName = combinations[i].join("_")
         def stageNameForExcludesComparison = combinations[i].join(",,")
@@ -691,7 +599,7 @@ def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName, cleanW
         }
         combinationEnvs[i] << "BUILD_BRANCH=" + escapedBashVariablename(stageName)
         combinationEnvs[i] << "BUILD_BRANCH_RAW=" + stageName
-        modules.global_vars.buildBranches << escapedBashVariablename(stageName)
+        parallelInfo.branches << escapedBashVariablename(stageName)
         def customWS = ""
         def envvar = combinationEnvs[i]
         jobs[stageName] = {
@@ -708,6 +616,7 @@ def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName, cleanW
                 else {
                     customWS = env.WORKSPACE + "@${stageName}"
                 }
+                customWS = customWS.replaceAll("@", "at")
                 print "Set parallel build WS: ${customWS}"
 
                 ws (customWS) {
@@ -722,6 +631,11 @@ def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName, cleanW
                 }
             }
         }
+    }
+
+    dir ('.pf-global') {
+        writeJSON file: 'parallelInfo.json', json: parallelInfo
+        stash name: 'pf-global-parallelinfo', includes: 'parallelInfo.json'
     }
 
     stage('Parallel') {
@@ -740,7 +654,12 @@ def startCompositionSplit(stageConfig, stagePreloads, idx) {
     }
 }
 
-def startComposition(stageConfig, stagePreloads) {
+def startComposition(stageName) {
+    def stageConfig
+    dir ('.pf-global') {
+        unstash name: "pf-${stageName}-config"
+        stageConfig = readJSON file: 'temporal.json'
+    }
     if (stageConfig.run_type == "SEQUENTIAL") {
         parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stageConfig.stages, stageConfig.node, true)
     }
