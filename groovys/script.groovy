@@ -8,6 +8,8 @@ def init(stageName) {
         // "inline", "file", "source", "groovy"
         types: [],
         contents: [],
+        expressions: [],
+
         sshcredentials: ""
     ]
     def config = utils.commonInit(stageName, defaultConfigs)
@@ -85,6 +87,14 @@ def func(pipelineAsCode, configs, preloads) {
         for (def i=0; i<configs.types.size(); i++) {
             if (validScriptTypes.contains(configs.types[i]) == false) {
                 return
+            }
+
+            if (configs.expressions[i] && configs.expressions[i] != "") {
+                def expr = evaluate(configs.expressions[i])
+                if (expr == false) {
+                    print "skip ${i}th script"
+                    continue
+                }
             }
 
             if (configs.types[i] == "inline") {
