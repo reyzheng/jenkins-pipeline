@@ -3,7 +3,6 @@ def init(stageName) {
         enabled: true,
         repo_path: "repo",
         display_name: "",
-        scm_main: -1,
         scm_counts: 1,
         scm_types: ["git"],
         scm_urls: [""],
@@ -29,27 +28,31 @@ def init(stageName) {
     def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     dir("groovys") {
-        if (config.settings.scm_types.contains("git")) {
-            stash name: "stash-actions-git", includes: "git.groovy"
-        }
-        if (config.settings.scm_types.contains("repo")) {
-            stash name: "stash-actions-repo", includes: "repo.groovy"
-        }
+        stash name: "stash-actions-git", includes: "git.groovy"
+        stash name: "stash-actions-repo", includes: "repo.groovy"
     }
     dir("pipeline_scripts") {
         stash name: "git-checkout-parent", includes: "git-checkout-parent.sh"
+        stash name: "git-label-submodules", includes: "git-label-submodules.sh"
     }
 
     // stash scripted params' script file
     utils.stashScriptedParamScripts(config.preloads.plainStageName, config.settings)
 
+    if (env.PF_MAIN_SOURCE_NAME) {
+        env.PF_MAIN_SOURCE_NAME += ",${stageName}"
+        env.PF_MAIN_SOURCE_PLAINNAME += ",${config.preloads.plainStageName}"
+    }
+    else {
+        env.PF_MAIN_SOURCE_NAME = stageName
+        env.PF_MAIN_SOURCE_PLAINNAME = config.preloads.plainStageName
+    }
+
     return config
 }
 
 
-def scm_checkout(pipelineAsCode, vars, i) {
-    def scmMain = vars.scm_main
-
+def scm_checkout(vars, i) {
     unstash name: "stash-script-utils"
     def utils = load "utils.groovy"
     def url = utils.captureStdout("echo ${vars.scm_urls[i]}", isUnix())
@@ -81,15 +84,13 @@ def scm_checkout(pipelineAsCode, vars, i) {
         ]
 
         gitConfigs.dst = vars.scm_dsts[i]
-        gitConfigs.preserve = pipelineAsCode.global_vars.preserve_source
+        gitConfigs.preserve = env.PF_PRESERVE_SOURCE
         gitConfigs.url = vars.scm_urls[i]
         gitConfigs.branch = vars.scm_branchs[i]
         gitConfigs.credentials = vars.scm_credentials[i]
         if (gitConfigs.credentials == "") {
-            try {
-                gitConfigs.credentials = pipelineAsCode.global_vars.gerrit_credentials
-            }
-            catch(e) {
+            if (env.PF_GERRIT_CREDENTIALS) {
+                gitConfigs.credentials = env.PF_GERRIT_CREDENTIALS
             }
         }
         // later added vars
@@ -113,8 +114,17 @@ def scm_checkout(pipelineAsCode, vars, i) {
             varname = "SOURCE_DIR${i}"
         }
         env."${varname}" = "${WORKSPACE}/${gitConfigs.dst}"
+        dir ('.pf-source') {
+            writeJSON file: '.pf-gitconfig', json: gitConfigs
+            if (env.BUILD_BRANCH) {
+                stash name: "stash-git-config-${env.BUILD_BRANCH}", includes: ".pf-gitconfig"
+            }
+            else {
+                stash name: "stash-git-config", includes: ".pf-gitconfig"
+            }
+        }
         def action = utils.loadAction("git")
-        action.func(pipelineAsCode, gitConfigs, null)
+        action.func("git")
 
         // get revision number for URF
         def revision
@@ -128,30 +138,34 @@ def scm_checkout(pipelineAsCode, vars, i) {
             }
         }
 
-        def saveIdx, scmIdx
-        if (scmMain == -1) {
-            // save rev info
-            saveIdx = i
-            scmIdx = i
-        }
-        else if (scmMain == i) {
-            // save rev info for this src only
-            saveIdx = 0
-            scmIdx = i
-        }
-        else {
-            // skip
-            return
-        }
+        // revision info for URF SBOM
+        if (env.PF_SOURCE_REVISION) {
+            dir (".pf-source") {
+                def jsonGitInfo
+                try {
+                    jsonGitInfo = readJSON file: '.pf-revision-info'
+                }
+                catch (e) {
+                    jsonGitInfo = [:]
+                    jsonGitInfo.sources = []
+                }
+                def jsonSource = [:]
+                def urlTokens = utils.parseUrl(gitConfigs.url)
+                jsonSource.addr = urlTokens[0].toString()
+                jsonSource.name = urlTokens[1].toString()
+                jsonSource.path = vars.scm_dsts[i]
+                jsonSource.revision = revision
+                jsonSource.upstream = gitConfigs.branch
+                print "Got repo info(git): " + jsonSource
+                jsonGitInfo.sources << jsonSource
 
-        if (pipelineAsCode.srcRevisions.containsKey(saveIdx) == false) {
-            def urlTokens = utils.parseUrl(gitConfigs.url)
-            pipelineAsCode.srcRevisions."${saveIdx}".addr = urlTokens[0]
-            pipelineAsCode.srcRevisions."${saveIdx}".name = urlTokens[1]
-            pipelineAsCode.srcRevisions."${saveIdx}".path = vars.scm_dsts[scmIdx]
-            pipelineAsCode.srcRevisions."${saveIdx}".revision = revision
-            pipelineAsCode.srcRevisions."${saveIdx}".upstream = gitConfigs.branch
-            print "Got repo info ${saveIdx}: " + pipelineAsCode.srcRevisions."${saveIdx}"
+                writeJSON file: '.pf-revision-info', json: jsonGitInfo
+                def stashName = 'pf-revision-info'
+                if (env.BUILD_BRANCH) {
+                    stashName += "-${env.BUILD_BRANCH}"
+                }
+                stash name: stashName, includes: '.pf-revision-info'
+            }
         }
     }
     else if (vars.scm_types[i] == "repo") {
@@ -199,23 +213,29 @@ def scm_checkout(pipelineAsCode, vars, i) {
         }
         repoConfig.scm_repo_mirror = repoMirror
         repoConfig.scm_dst = vars.scm_dsts[i]
-        repoConfig.preserve = pipelineAsCode.global_vars.preserve_source
+        repoConfig.preserve = env.PF_PRESERVE_SOURCE
 
         def action = utils.loadAction("repo")
         action.call(repoConfig)
-        if (scmMain == -1 || scmMain == i) {
-            // save rev info
-            if (isUnix() == true && pipelineAsCode.srcRevisions.manifest == null && repoConfig.scm_repo_mirror == "") {
+
+        // revision info for URF SBOM
+        if (env.PF_SOURCE_REVISION) {
+            if (isUnix() == true && repoConfig.scm_repo_mirror == "") {
                 // repo manifest is only available under non-mirror mode
+                def manifest
                 dir (repoConfig.scm_dst) {
-                    pipelineAsCode.srcRevisions.manifest = sh(script: "${repoPath} manifest -r", returnStdout: true).trim()
+                    manifest = sh(script: "${repoPath} manifest -r", returnStdout: true).trim()
                 }
-                print "Got repo info(manifest): " + pipelineAsCode.srcRevisions.manifest
+                dir (".pf-source") {
+                    writeFile file: '.pf-revision-info', text: manifest
+                    def  stashName = 'pf-revision-info'
+                    if (env.BUILD_BRANCH) {
+                        stashName += "-${env.BUILD_BRANCH}"
+                    }
+                    stash name: stashName, includes: '.pf-revision-info'
+                    print "Got repo info(manifest): ${manifest}"
+                }
             }
-        }
-        else {
-            // skip
-            return
         }
     }
     else {
@@ -231,6 +251,9 @@ def func(pipelineAsCode, stageConfigsRaw, stagePreloads) {
     if (stageConfigsRaw.enabled == false) {
         return
     }
+    dir (".pf-source") {
+        deleteDir()
+    }
     def stageConfigs = [:]
     utils.unstashScriptedParamScripts(stagePreloads.plainStageName, stageConfigsRaw, stageConfigs)
     for (def i=0; i<stageConfigs.scm_counts; i++) {
@@ -243,7 +266,7 @@ def func(pipelineAsCode, stageConfigsRaw, stagePreloads) {
         if (stageConfigs.scm_dsts.size() > i) {
             env."PF_SOURCE_DST_${i}" = stageConfigs.scm_dsts[i]
         }
-        scm_checkout(pipelineAsCode, stageConfigs, i)
+        scm_checkout(stageConfigs, i)
     }
 }
 
