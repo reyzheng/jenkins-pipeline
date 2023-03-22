@@ -20,10 +20,26 @@ def init(stageName) {
     return config
 }
 
-def func(pipelineAsCode, configs, preloads) {
+//def func(pipelineAsCode, configs, preloads) {
+def func(stageName) {
+    dir ('.pf-source') {
+        if (env.BUILD_BRANCH) {
+            unstash name: "stash-${stageName}-config-${env.BUILD_BRANCH}"
+        }
+        else {
+            unstash name: "stash-${stageName}-config"
+        }
+        configs = readJSON file: ".pf-gitconfig"
+    }
+    //def localBranch = ''
+    def localBranch = configs.branch
+    if (configs.branch == 'FETCH_HEAD') {
+        localBranch = 'PFtest-branch'
+    }
+
     if (configs.enabled == true) {
         dir (configs.dst) {
-            if (configs.preserve == false) {
+            if (configs.preserve == false || configs.preserve == 'false') {
                 deleteDir()
             }
 
@@ -38,7 +54,7 @@ def func(pipelineAsCode, configs, preloads) {
                     doGenerateSubmoduleConfigurations: false, 
                     extensions: [
                         [$class: 'LocalBranch', 
-                            localBranch: "test-branch"],
+                            localBranch: localBranch],
                         [$class: 'SubmoduleOption', 
                             disableSubmodules: false, 
                             parentCredentials: true, 
@@ -60,7 +76,7 @@ def func(pipelineAsCode, configs, preloads) {
                 checkout(scm: [$class: 'GitSCM', 
                     extensions: [
                         [$class: 'LocalBranch', 
-                            localBranch: "test-branch"],
+                            localBranch: localBranch],
                         [$class: 'SubmoduleOption', 
                             disableSubmodules: true],
                         [$class: 'CloneOption',
@@ -79,13 +95,13 @@ def func(pipelineAsCode, configs, preloads) {
                 if (isUnix()) {
                     sh """
                         #git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
-                        git branch --set-upstream-to=origin/${configs.branch} test-branch
+                        git branch --set-upstream-to=origin/${configs.branch} ${localBranch}
                     """
                 }
                 else {
                     bat """
                         #git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
-                        git branch --set-upstream-to=origin/${configs.branch} test-branch
+                        git branch --set-upstream-to=origin/${configs.branch} ${localBranch}
                     """
                 }
             }
