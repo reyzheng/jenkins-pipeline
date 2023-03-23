@@ -1,0 +1,34 @@
+def utils
+def pf
+
+pipeline {
+    // don't use 'agent any'
+    // 'agent none' allows the job to continue on the same node with the same files
+    agent {
+        label nodeLabel
+	      // tips: do not add customworkspace here
+	      // error may occurr if agent moved to windows
+    }
+    options { timestamps () }
+    stages {
+        stage("PF-init") {
+            steps {
+                script {
+		                dir(".pf-framework") {
+			                  deleteDir()
+			                  if (isUnix() == true) {
+			                      //sh "GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b develop ."
+			                      sh "GIT_SSL_NO_VERIFY=true git clone https://github.com/reyzheng/jenkins-pipeline.git --depth 1 -b main ."
+			              }
+			              else {
+			                  bat "set GIT_SSL_NO_VERIFY=true && git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b develop ."
+			              }
+			              stash name: "pf-framework", includes: "**"
+		            }
+      		      unstash name: "pf-framework"
+		            utils = load "utils.groovy"
+		            pf = load("rtk_stages.groovy")
+		            pf.init()
+            }
+        }
+    }
