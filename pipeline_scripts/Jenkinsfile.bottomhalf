@@ -1,0 +1,56 @@
+/*
+stage('DAGGER-coverity') {
+    steps {
+        script {
+            sh """
+	        mv source/dagger.cue .
+	    	echo 'dir. before dagger'
+		pwd && ls -al
+	    	echo 'start dagger'
+		dagger-cue project init
+		dagger-cue project update
+		dagger-cue do build --log-format=plain
+	    	echo 'dir. after dagger'
+		pwd && ls -al
+	    """
+        }
+    }
+}
+stage('Archive') {
+    steps {
+        archiveArtifacts artifacts: '_build/*', fingerprint: true
+    }
+}
+*/
+    }
+    post {
+        always {
+            script {
+                // enable logParser if scripts/logParserRule existed
+                logParser failBuildOnError: true, showGraphs:true, unstableOnWarning: true, useProjectRule: true, projectRulePath: './scripts/logParserRule'
+                pf.postStage("always")
+                pf.emailNotification()
+            }
+        }
+        success {
+            script {
+                pf.postStage("success")
+	        }
+        }
+        failure {
+            script {
+                pf.postStage("failure")
+            }
+        }
+        unstable {
+            script {
+                pf.postStage("unstable")
+            }
+        }
+        changed {
+            script {
+                pf.postStage("changed")
+            }
+        }
+    }
+}
