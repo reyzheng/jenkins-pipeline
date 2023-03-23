@@ -440,7 +440,11 @@ def execStage(actionName, stageName) {
     }        
 }
 
-def format(globalConfig) {
+def format() {
+    def globalConfig
+    dir('settings') {
+        globalConfig = readJSON file: 'global_config.json'
+    }
     if (! utils) {
         utils = load 'utils.groovy'
     }
