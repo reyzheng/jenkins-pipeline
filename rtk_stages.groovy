@@ -453,7 +453,9 @@ def format() {
     if (globalConfig.nodes.size() > 0) {
         nodeLabel = globalConfig.nodes[0]
     }
+    def nodeWS = env.WORKSPACE
     def nodeSection = "def nodeLabel='$nodeLabel'\n"
+    nodeSection += "def nodeWS='$nodeWS'\n"
     def topHalf = readFile file: 'Jenkinsfile.tophalf'
     def sourceOnly = false
     if (globalConfig.dagger) {
