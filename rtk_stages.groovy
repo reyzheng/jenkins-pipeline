@@ -456,13 +456,17 @@ def format() {
     def nodeWS = env.WORKSPACE
     def nodeSection = "def nodeLabel='$nodeLabel'\n"
     nodeSection += "def nodeWS='$nodeWS'\n"
-    def topHalf = readFile file: 'Jenkinsfile.tophalf'
+    def topHalf
+    def bottomHalf
+    dir ('pipeline_scripts') {
+        topHalf = readFile file: 'Jenkinsfile.tophalf'
+	bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
+    }
     def sourceOnly = false
     if (globalConfig.dagger) {
         sourceOnly = true
     }
     def content = iterateToFile(stages, sourceOnly)
-    def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
     print nodeSection + topHalf + content + bottomHalf
