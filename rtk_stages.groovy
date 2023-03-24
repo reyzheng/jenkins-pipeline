@@ -150,7 +150,7 @@ def loadCoreActions() {
             def actionFileName = actionFile.toString()
             def actionName = actionFileName.split(/\\|\/|\./)
             // groovys/source.groovy -> groovy source groovy
-            actionName = actionName[1]
+            actionName = actionName[0]
             modules.coreActions << actionName
         }
     }
@@ -177,6 +177,10 @@ def loadUserConfig(configFileName) {
             def frameworkAction = fileExists "${realActionName}.groovy"
             if (frameworkAction == true) {
                 stash name: "stash-actions-${actionName}", includes: "${realActionName}.groovy"
+                if (actionName == "coverity") {
+                    // Ugly: for Rock's dynamic 'build only' or 'build + coverity'
+                    stash name: "stash-actions-script", includes: "script.groovy"
+                }
                 stashStatus = true
             }
         }
@@ -442,9 +446,10 @@ def execStage(actionName, stageName) {
 
 def format() {
     def globalConfig
-    dir('settings') {
+    dir ('settings') {
         globalConfig = readJSON file: 'global_config.json'
     }
+
     if (! utils) {
         utils = load 'utils.groovy'
     }
@@ -453,20 +458,14 @@ def format() {
     if (globalConfig.nodes.size() > 0) {
         nodeLabel = globalConfig.nodes[0]
     }
-    def nodeWS = env.WORKSPACE
     def nodeSection = "def nodeLabel='$nodeLabel'\n"
-    nodeSection += "def nodeWS='$nodeWS'\n"
-    def topHalf
-    def bottomHalf
-    dir ('pipeline_scripts') {
-        topHalf = readFile file: 'Jenkinsfile.tophalf'
-	bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
-    }
+    def topHalf = readFile file: 'Jenkinsfile.tophalf'
     def sourceOnly = false
     if (globalConfig.dagger) {
         sourceOnly = true
     }
     def content = iterateToFile(stages, sourceOnly)
+    def bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
 
     print "Jenkinsfile generated"
     print nodeSection + topHalf + content + bottomHalf
