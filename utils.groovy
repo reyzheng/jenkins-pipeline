@@ -373,6 +373,7 @@ def staticInit(stageName, defaultConfigs) {
     return defaultConfigs
 }
 
+/*
 def unstashScriptedParams(stageConfigs) {
     if (stageConfigs.scriptableParams) {
         def scriptableParams = stageConfigs.scriptableParams
@@ -404,18 +405,44 @@ def unstashScriptedParams(stageConfigs) {
         }
     }
 }
+*/
 
-def readJsonConfig(stageName) {
+def execPython(stageName) {
+	if (isUnix()) {
+		def statusPython = sh script: "python --version", returnStatus: true
+		def statusPython3 = sh script: "python3 --version", returnStatus: true
+		if (statusPython == 0) {
+			return 'python'
+		}
+		else if (statusPython3 == 0) {
+			return 'python3'
+		}
+		else {
+			error("Please install python")
+		}
+	}
+	else {
+		def statusPython = bat script: "python --version", returnStatus: true
+		def statusPython3 = bat script: "python3 --version", returnStatus: true
+		if (statusPython == 0) {
+			return 'python'
+		}
+		else if (statusPython3 == 0) {
+			return 'python3'
+		}
+		else {
+			error("Please install python")
+		}
+	}
+}
+
+def unstashConfig(stageName) {
     def stageConfigs
-    dir (".pf-utils") {
+    dir (".pf-configs") {
         def plainStageName = stageName.replaceAll("@", "at")
         unstash name: "stage-configs-${plainStageName}"
-        stageConfigs = readJSON file: "stage-config.json"
+        //stageConfigs = readJSON file: "stage-config.json"
     }
-    if (stageConfigs.scriptableParams) {
-        unstashScriptedParams(stageConfigs)
-    }
-    return stageConfigs
 }
 
 def loadAction(actionName) {

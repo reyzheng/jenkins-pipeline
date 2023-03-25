@@ -413,13 +413,17 @@ def iterateToFile(stages, sourceOnly) {
 }
 
 def execStage(actionName, stageName) {
+	def staticActions = ['coverity']
     def skinnyActions = ['jira', 'source']
     if (modules.coreActions.contains(actionName)) {
         def action = utils.loadAction(actionName)
         def stageConfig = modules.configs[stageName].settings
         def stagePreloads = modules.configs[stageName].preloads
         // TODO: quick actions
-        if (skinnyActions.contains(actionName)) {
+        if (skinnyActions.contains(staticActions)) {
+            action.func(stageName)
+        }
+        else if (skinnyActions.contains(actionName)) {
             action.func(null, stageConfig, stagePreloads)
         }
         else {

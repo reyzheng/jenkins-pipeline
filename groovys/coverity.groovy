@@ -53,18 +53,18 @@ def init(stageName) {
 
         scriptableParams: ["enable", "coverity_scan_enabled", "coverity_analyze_parent", "coverity_project", "coverity_stream", "coverity_comptype", "coverity_comptype_gcc", "coverity_snapshot_version", "coverity_snapshot_description"]
     ]
-    def mapConfig = utils.commonInit(stageName, defaultConfigs)
+    def mapConfig = utils.staticInit(stageName, defaultConfigs)
 
-    if (mapConfig.settings.coverity_stream instanceof java.lang.String) {
+    if (mapConfig.coverity_stream instanceof java.lang.String) {
         // TODO: tell user deprecated
-        convertToList(mapConfig.settings)
+        convertToList(mapConfig)
     }
 
     // stash scripted params' script file
-    utils.stashScriptedParamScripts(mapConfig.preloads.plainStageName, mapConfig.settings)
+    utils.stashScriptedParamScripts(mapConfig.plainStageName, mapConfig)
 
     // stash checker files
-    if (mapConfig.settings.coverity_checker_enablement.contains("custom")) {
+    if (mapConfig.coverity_checker_enablement.contains("custom")) {
         dir ("scripts") {
             def checkersCustomExists = fileExists "checkers_custom"
             if (checkersCustomExists == false) {
@@ -82,7 +82,7 @@ def init(stageName) {
         }
     }
 
-    if (mapConfig.settings.coverity_analyze_defects == true) {
+    if (mapConfig.coverity_analyze_defects == true) {
         dir ("groovys") {
             stash name: "stash-actions-covanalyze", includes: "covanalyze.groovy"
         }
@@ -92,26 +92,26 @@ def init(stageName) {
 
     // copy from script.groovy
     def filesToStash = []
-    for (def i=0; i<mapConfig.settings.types.size(); i++) {
-        if (mapConfig.settings.types[i] != "inline") {
-            filesToStash << mapConfig.settings.contents[i]
+    for (def i=0; i<mapConfig.types.size(); i++) {
+        if (mapConfig.types[i] != "inline") {
+            filesToStash << mapConfig.contents[i]
         }
     }
-    mapConfig.settings.has_stashes = false
+    mapConfig.has_stashes = false
     if (filesToStash.size() > 0) {
-        mapConfig.settings.has_stashes = true
+        mapConfig.has_stashes = true
         dir("scripts") {
             print "${stageName}: stash files " + filesToStash.join(",")
-            stash name: "stash-script-${mapConfig.preloads.plainStageName}", includes: filesToStash.join(",")
+            stash name: "stash-script-${mapConfig.plainStageName}", includes: filesToStash.join(",")
         }
     }
 
     // check credentials
     def underUnix = isUnix()
-    if (mapConfig.settings.coverity_auth_key_credential != "" && underUnix == true) {
-        withCredentials([file(credentialsId: mapConfig.settings.coverity_auth_key_credential, variable: 'KEY_PATH')]) {
+    if (mapConfig.coverity_auth_key_credential != "" && underUnix == true) {
+        withCredentials([file(credentialsId: mapConfig.coverity_auth_key_credential, variable: 'KEY_PATH')]) {
             def keyObj = readJSON file: KEY_PATH
-            def checkHealth = utils.captureStdout("set +x && curl --header 'Accept: application/json' --user ${keyObj.username}:${keyObj.key} http://${mapConfig.settings.coverity_host}:${mapConfig.settings.coverity_port}/api/v2/serverInfo/version", underUnix)
+            def checkHealth = utils.captureStdout("set +x && curl --header 'Accept: application/json' --user ${keyObj.username}:${keyObj.key} http://${mapConfig.coverity_host}:${mapConfig.coverity_port}/api/v2/serverInfo/version", underUnix)
             if (checkHealth[0] == "Authentication failed.") {
                 error("${stageName}: invalid coverity credentials")
             }
@@ -125,7 +125,10 @@ def init(stageName) {
         catch(e) {}
     }
 
-    return mapConfig
+    dir ('.pf-coverity') {
+		writeJSON file: 'stage-config.json', json: mapConfig
+		stash name: "stash-config-${mapConfig.plainStageName}", includes: 'stage-config.json'
+	}
 }
 
 def convertToList(rawConfig) {
@@ -637,18 +640,33 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
     }
 }
 
-def func(pipelineAsCode, buildConfig, buildPreloads) {
-    def coverityConfig
-    def coverityPreloads
+//def func(pipelineAsCode, buildConfig, buildPreloads) {
+def func(stageName) {
+    unstash name: "stash-script-utils"
+    def utils = load "utils.groovy"
+	utils.unstashConfig(stageName)
+	def python = utils.execPython(stageName)
+	if (isUnix()) {
+		sh """
+			${python} '.pf-configs/stage-config.json'
+		"""
+	}
+	else {
+		sh """
+			${python} '.pf-configs\stage-config.json'
+		"""		
+	}
+/*
     def validScriptTypes = ["inline", "file", "source", "groovy"]
-
     if (buildPreloads.actionName == "coverity") {
+		// buildwithcoverity
         coverityConfig = buildConfig
-        coverityPreloads = buildPreloads
+        //coverityPreloads = buildPreloads
     }
     else {
+		// build + coverity
         coverityConfig = pipelineAsCode.configs["coverity"].settings
-        coverityPreloads = pipelineAsCode.configs["coverity"].preloads
+        //coverityPreloads = pipelineAsCode.configs["coverity"].preloads
     }
     def buildDirs = []
     if (env.PF_MAIN_SOURCE_NAME) {
@@ -684,8 +702,6 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
 
     coverityConfig = configurationFillup(pipelineAsCode, coverityConfig)
 
-    unstash name: "stash-script-utils"
-    def utils = load "utils.groovy"
     def coverityConfigScripted = [:]
     utils.unstashScriptedParamScripts(coverityPreloads.plainStageName, coverityConfig, coverityConfigScripted)
 
@@ -789,6 +805,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         unstable(message: "Coverity build $branchSubDescription is unstable " + e)
         env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS += "Build $branchSubDescription UNSTABLE;"
     }
+*/
 }
 
 return this
