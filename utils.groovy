@@ -436,7 +436,7 @@ def getPython() {
 	}
 }
 
-def unstashPyExec(actionName, stageName) {
+def pyExec(actionName, stageName) {
     def plainStageName = stageName.replaceAll("@", "at")
 
 	unstash name: "stash-python-${plainStageName}"
