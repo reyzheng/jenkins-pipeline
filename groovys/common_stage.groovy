@@ -14,14 +14,18 @@ def init(stageName) {
 
     if (config.settings."${actionName}_enabled" == true) {
         // load script content
-        config.preloads.scriptTypes = config.settings."${actionName}_scripts_type"
-        config.preloads.scripts = config.settings."${actionName}_scripts"    
-        for (def ite=0; ite<config.preloads.scriptTypes.size(); ite++) {
-            if (config.preloads.scriptTypes[ite] == "inline") {
+        def scriptTypes = config.settings."${actionName}_scripts_type"
+        def scripts = config.settings."${actionName}_scripts"
+        def filesToStash = []
+        for (def ite=0; ite<scriptTypes.size(); ite++) {
+            if (scriptTypes[ite] != "inline") {
+                filesToStash << scripts[i]
             }
-            else if (config.preloads.scriptTypes[ite].trim() != "") {
-                //print "load $stageName script, " + config.preloads.scripts[ite]
-                config.preloads.scripts[ite] = readFile(file: "scripts/" + config.preloads.scripts[ite])
+        }
+        if (filesToStash.size() > 0) {
+            config.settings.has_stashes = true
+            dir("scripts") {
+                stash name: "stash-script-${config.preloads.plainStageName}", includes: filesToStash.join(",")
             }
         }
     }
@@ -44,8 +48,16 @@ def func(pipelineAsCode, configs, actionConfig) {
     }
 
     try {
-        for (def i=0; i<actionConfig.scriptTypes.size(); i++) {
-            if (validScriptTypes.contains(actionConfig.scriptTypes[i]) == false) {
+        if (configs.has_stashes == true) {
+            dir(".script") {
+                unstash "stash-script-${actionConfig.plainStageName}"
+            }
+        }
+
+        def scriptTypes = config.settings."${actionName}_scripts_type"
+        def scripts = config.settings."${actionName}_scripts"    
+        for (def i=0; i<scriptTypes.size(); i++) {
+            if (validScriptTypes.contains(scriptTypes[i]) == false) {
                 continue
             }
             def scmDir
@@ -60,34 +72,25 @@ def func(pipelineAsCode, configs, actionConfig) {
 
             print "Working directory: " + scmDir
             dir(scmDir) {
-                if (actionConfig.scriptTypes[i] == "inline") {
+                if (scriptTypes[i] == "inline") {
                     if (underUnix == true) {
-                        sh actionConfig.scripts[i]
+                        sh scripts[i]
                     }
                     else {
-                        bat actionConfig.scripts[i]
+                        bat scripts[i]
                     }
                 }
                 else {
-                    // write to a temp file in workspace
-                    def dstFileName = "script-" + actionConfig.actionName + "-" + currentBuild.startTimeInMillis + ".bat"
-                    def dstFile
-                    if (underUnix == true) {
-                        dstFile = env.WORKSPACE + "/" + dstFileName
-                    }
-                    else {
-                        dstFile = env.WORKSPACE + "\\" + dstFileName
-                    }
-
-                    writeFile(file: dstFile , text: actionConfig.scripts[i])
-                    if (actionConfig.scriptTypes[i] == "source") {
+                    def dstFile = scripts[i]
+                    writeFile(file: dstFile , text: scripts[i])
+                    if (scriptTypes[i] == "source") {
                         sh ". " + dstFile
                     }
-                    else if (actionConfig.scriptTypes[i] == "groovy") {
+                    else if (scriptTypes[i] == "groovy") {
                         def externalMethod = load(dstFile)
                         externalMethod.func()
                     }
-                    else if (actionConfig.scriptTypes[i] == "file") {
+                    else if (scriptTypes[i] == "file") {
                         if (underUnix == true) {
                             def statusCode = sh script: "bash", returnStatus: true
                             if (statusCode == 0) {
