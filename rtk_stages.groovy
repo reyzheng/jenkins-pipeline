@@ -417,16 +417,17 @@ def execStage(actionName, stageName) {
     def skinnyActions = ['jira', 'source']
     if (modules.coreActions.contains(actionName)) {
         def action = utils.loadAction(actionName)
-        def stageConfig = modules.configs[stageName].settings
-        def stagePreloads = modules.configs[stageName].preloads
-        // TODO: quick actions
-        if (skinnyActions.contains(staticActions)) {
+        if (staticActions.contains(staticActions)) {
             action.func(stageName)
         }
         else if (skinnyActions.contains(actionName)) {
+			def stageConfig = modules.configs[stageName].settings
+			def stagePreloads = modules.configs[stageName].preloads
             action.func(null, stageConfig, stagePreloads)
         }
         else {
+			def stageConfig = modules.configs[stageName].settings
+			def stagePreloads = modules.configs[stageName].preloads
             action.func(modules, stageConfig, stagePreloads)
         }
     }
