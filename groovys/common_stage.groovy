@@ -100,7 +100,7 @@ def func(pipelineAsCode, configs, actionConfig) {
                             }
                         }
                         else {
-                            bat "\"${dstFile}\""
+                            bat "${dstFile}"
                         }
                     }
 
