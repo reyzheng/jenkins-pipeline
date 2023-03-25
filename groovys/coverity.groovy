@@ -638,7 +638,6 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
 def func(pipelineAsCode, buildConfig, buildPreloads) {
     def coverityConfig
     def coverityPreloads
-    def validScriptTypes = ["inline", "file", "source", "groovy"]
 
     if (buildPreloads.actionName == "coverity") {
         coverityConfig = buildConfig
@@ -683,11 +682,9 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
     }
 
     try {
+        print "685 " + coverityConfigScripted
         for (def i=0; i<coverityConfigScripted.types.size(); i++) {
-            if (validScriptTypes.contains(coverityConfigScripted.types[i]) == false) {
-                continue
-            }
-
+            print "686 "
             if (coverityConfigScripted.scriptAction == true) {
                 if (coverityConfigScripted.expressions[i] && coverityConfigScripted.expressions[i] != "") {
                     def expr = evaluate(coverityConfigScripted.expressions[i])
@@ -698,6 +695,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 }
             }
 
+            print "697"
             def buildDir = ""
             if (coverityConfigScripted.scriptAction == false && buildDirs[i] != null) {
                 buildDir = buildDirs[i]
@@ -706,6 +704,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             if (coverityConfigScripted.buildmapping == "manytoone") {
                 coverityConfigIdx = 0
             }
+            print "706"
             def secondScanCleanDir = coverityConfigScripted.coverity_clean_builddir
             if (coverityConfigScripted.coverity_analyze_parent == "prev" ||
                     coverityConfigScripted.coverity_analyze_parent == "branch" ||
