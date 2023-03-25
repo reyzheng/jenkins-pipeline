@@ -56,6 +56,7 @@ def func(pipelineAsCode, configs, actionConfig) {
 
         def scriptTypes = configs."${actionConfig.actionName}_scripts_type"
         def scripts = configs."${actionConfig.actionName}_scripts"    
+        print 
         for (def i=0; i<scriptTypes.size(); i++) {
             if (validScriptTypes.contains(scriptTypes[i]) == false) {
                 continue
@@ -82,7 +83,6 @@ def func(pipelineAsCode, configs, actionConfig) {
                 }
                 else {
                     def dstFile = scripts[i]
-                    writeFile(file: dstFile , text: scripts[i])
                     if (scriptTypes[i] == "source") {
                         sh ". " + dstFile
                     }
