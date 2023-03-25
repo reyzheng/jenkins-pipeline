@@ -695,7 +695,6 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 }
             }
 
-            print "697"
             def buildDir = ""
             if (coverityConfigScripted.scriptAction == false && buildDirs[i] != null) {
                 buildDir = buildDirs[i]
@@ -704,7 +703,6 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             if (coverityConfigScripted.buildmapping == "manytoone") {
                 coverityConfigIdx = 0
             }
-            print "706"
             def secondScanCleanDir = coverityConfigScripted.coverity_clean_builddir
             if (coverityConfigScripted.coverity_analyze_parent == "prev" ||
                     coverityConfigScripted.coverity_analyze_parent == "branch" ||
@@ -740,7 +738,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 }
                 dir(buildDir) {
                     coverityConfigScripted.refParent = true
-                    coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfigScripted.scriptContents[i], coverityConfigIdx, coverityConfigScripted.scriptAction)
+                    coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfigScripted.contents[i], coverityConfigIdx, coverityConfigScripted.scriptAction)
                 }
                 if (coverityConfigScripted.coverity_analyze_parent == "custom") {
                     dir(".gitscript") {
@@ -763,7 +761,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             dir(buildDir) {
                 coverityConfigScripted.refParent = false
                 coverityConfigScripted.coverity_clean_builddir = secondScanCleanDir
-                coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfigScripted.scriptContents[i], coverityConfigIdx, coverityConfigScripted.scriptAction)
+                coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfigScripted.contents[i], coverityConfigIdx, coverityConfigScripted.scriptAction)
             }
         }
         env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS += "Build $branchSubDescription SUCCESS;"
