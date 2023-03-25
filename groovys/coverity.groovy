@@ -673,9 +673,9 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         if (buildConfig.has_stashes == true) {
             dir(".script") {
                 unstash "stash-script-${buildPreloads.plainStageName}"
-                sh """
+                dir """
                     echo 672
-                    pwd && ls -al
+                    dir
                 """
             }
         }
