@@ -503,8 +503,13 @@ def coverity_scan(coverityConfig, buildIdx, idx) {
                 }
             }
             else {
-                dstFile = env.WORKSPACE + "/script-covbuild-" + currentBuild.startTimeInMillis + ".bat"
-                writeFile(file: dstFile , text: buildScript)
+                dstFile = buildScript
+                if (underUnix) {
+                    sh "mv -f ../${dstFile} ."
+                }
+                else {
+                    bat "move /Y ..\\.script\\\"${dstFile}\" ."
+                }
             }
             if (underUnix == true) {
                 def shell = "sh"
@@ -642,6 +647,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
     def coverityPreloads
 
     if (buildPreloads.actionName == "coverity") {
+        // buildwithcoverity, script + coverity
         coverityConfig = buildConfig
         coverityPreloads = buildPreloads
         
@@ -653,6 +659,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         }
     }
     else {
+        // buil + coverity
         coverityConfig = pipelineAsCode.configs["coverity"].settings
         coverityPreloads = pipelineAsCode.configs["coverity"].preloads
 
@@ -661,8 +668,17 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             def sourceNames = env.PF_MAIN_SOURCE_NAME.split(',')
             coverityConfig.buildDirs = pipelineAsCode.configs[sourceNames[0]].settings.scm_dsts
         }
-        coverityConfig.types = buildPreloads.scriptTypes
-        coverityConfig.contents = buildPreloads.scripts
+        coverityConfig.types = buildConfig.build_scripts_type
+        coverityConfig.contents = buildConfig.build_scripts
+        if (buildConfig.has_stashes == true) {
+            dir(".script") {
+                unstash "stash-script-${buildPreloads.plainStageName}"
+                sh """
+                    echo 672
+                    pwd && ls -al
+                """
+            }
+        }
     }
     coverityConfig = configurationFillup(pipelineAsCode, coverityConfig)
     
