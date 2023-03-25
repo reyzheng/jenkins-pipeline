@@ -683,8 +683,8 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
     }
 
     try {
-        for (def i=0; i<scriptTypes.size(); i++) {
-            if (validScriptTypes.contains(scriptTypes[i]) == false) {
+        for (def i=0; i<coverityConfigScripted.scriptTypes.size(); i++) {
+            if (validScriptTypes.contains(coverityConfigScripted.scriptTypes[i]) == false) {
                 continue
             }
 
@@ -741,7 +741,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 }
                 dir(buildDir) {
                     coverityConfigScripted.refParent = true
-                    coverity_scan(coverityConfigScripted, coverityPreloads, scriptTypes[i], scriptContents[i], coverityConfigIdx, scriptAction)
+                    coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.scriptTypes[i], coverityConfig.scriptContents[i], coverityConfigIdx, scriptAction)
                 }
                 if (coverityConfigScripted.coverity_analyze_parent == "custom") {
                     dir(".gitscript") {
@@ -764,7 +764,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             dir(buildDir) {
                 coverityConfigScripted.refParent = false
                 coverityConfigScripted.coverity_clean_builddir = secondScanCleanDir
-                coverity_scan(coverityConfigScripted, coverityPreloads, scriptTypes[i], scriptContents[i], coverityConfigIdx, scriptAction)
+                coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.scriptTypes[i], coverityConfig.scriptContents[i], coverityConfigIdx, scriptAction)
             }
         }
         env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS += "Build $branchSubDescription SUCCESS;"
