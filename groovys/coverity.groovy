@@ -647,14 +647,10 @@ def func(stageName) {
 	utils.unstashConfig(stageName)
 	def python = utils.execPython(stageName)
 	if (isUnix()) {
-		sh """
-			${python} '.pf-configs/stage-config.json'
-		"""
+		sh "$python .pf-configs/stage-config.json"
 	}
 	else {
-		sh """
-			${python} '.pf-configs\stage-config.json'
-		"""		
+		bat "$python .pf-configs\stage-config.json"		
 	}
 /*
     def validScriptTypes = ["inline", "file", "source", "groovy"]
