@@ -286,6 +286,7 @@ def coverity_scan(coverityConfig, buildIdx, idx) {
     if (coverityConfig.coverity_auth_key_credential == "") {
         error("Invalid coverity token credentials")
     }
+
     dir(".coverity-checker") {
         if (checkerEnablement == "custom") {
             unstash "stash-checkers-custom"
@@ -684,8 +685,12 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
 
     try {
         print "685 " + coverityConfigScripted
+
         for (def i=0; i<coverityConfigScripted.types.size(); i++) {
-            print "686 "
+            def buildDir = ""
+            if (coverityConfigScripted.buildDirs) {
+                buildDir = coverityConfigScripted.buildDirs[i]
+            }
             if (coverityConfigScripted.scriptAction == true) {
                 if (coverityConfigScripted.expressions[i] && coverityConfigScripted.expressions[i] != "") {
                     def expr = evaluate(coverityConfigScripted.expressions[i])
@@ -696,10 +701,6 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 }
             }
 
-            def buildDir = ""
-            if (coverityConfigScripted.scriptAction == false && buildDirs[i] != null) {
-                buildDir = buildDirs[i]
-            }
             def coverityConfigIdx = i
             if (coverityConfigScripted.buildmapping == "manytoone") {
                 coverityConfigIdx = 0
@@ -737,7 +738,8 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                         sh .gitscript/git-checkout-parent.sh ${sourceDst} ${coverityConfigScripted.coverity_analyze_parent}
                     """
                 }
-                dir(buildDir) {
+
+                dir (buildDir) {
                     coverityConfigScripted.refParent = true
                     coverity_scan(coverityConfigScripted, i, coverityConfigIdx)
                 }
@@ -759,7 +761,8 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                     """
                 }
             }
-            dir(buildDir) {
+
+            dir (buildDir) {
                 coverityConfigScripted.refParent = false
                 coverityConfigScripted.coverity_clean_builddir = secondScanCleanDir
                 coverity_scan(coverityConfigScripted, i, coverityConfigIdx)
