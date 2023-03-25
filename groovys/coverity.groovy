@@ -688,7 +688,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 continue
             }
 
-            if (scriptAction == true) {
+            if (coverityConfigScripted.scriptAction == true) {
                 if (coverityConfigScripted.expressions[i] && coverityConfigScripted.expressions[i] != "") {
                     def expr = evaluate(coverityConfigScripted.expressions[i])
                     if (expr == false) {
@@ -699,7 +699,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             }
 
             def buildDir = ""
-            if (scriptAction == false && buildDirs[i] != null) {
+            if (coverityConfigScripted.scriptAction == false && buildDirs[i] != null) {
                 buildDir = buildDirs[i]
             }
             def coverityConfigIdx = i
