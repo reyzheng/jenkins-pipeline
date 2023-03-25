@@ -282,6 +282,7 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
     def coverity_comptype_ld = coverityConfig.coverity_comptype_ld[idx]
     def checkerEnablement = coverityConfig.coverity_checker_enablement[idx]
     def checkerText
+	
     if (coverityConfig.coverity_auth_key_credential == "") {
         error("Invalid coverity token credentials")
     }
@@ -322,6 +323,9 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
     else {
         pwdPath = bat (script: "echo %cd%", returnStdout: true).trim()
         pwdPath = pwdPath.readLines().drop(1).join(" ")
+        // auto replace back slash
+		coverity_build_dir = coverity_build_dir.replaceAll("/", "\\")
+		coverity_xml = coverity_xml.replaceAll("/", "\\")
     }
 
     def coverity_command_prefix = ""
@@ -368,8 +372,6 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
             sh 'mkdir -p ' + coverity_build_dir
         }
         else {
-            // TODO: auto replace back slash
-			coverity_build_dir = coverity_build_dir.replaceAll("/", "\\")
             bat "if exist ${coverity_xml} del ${coverity_xml} /f"
             bat 'md ' + coverity_build_dir
         }
