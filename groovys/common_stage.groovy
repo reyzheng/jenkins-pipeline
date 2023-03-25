@@ -19,7 +19,7 @@ def init(stageName) {
         def filesToStash = []
         for (def ite=0; ite<scriptTypes.size(); ite++) {
             if (scriptTypes[ite] != "inline") {
-                filesToStash << scripts[i]
+                filesToStash << scripts[ite]
             }
         }
         if (filesToStash.size() > 0) {
