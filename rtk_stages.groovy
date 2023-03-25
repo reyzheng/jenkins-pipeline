@@ -417,7 +417,7 @@ def execStage(actionName, stageName) {
     def skinnyActions = ['jira', 'source']
     if (modules.coreActions.contains(actionName)) {
         def action = utils.loadAction(actionName)
-        if (staticActions.contains(staticActions)) {
+        if (staticActions.contains(actionName)) {
             action.func(stageName)
         }
         else if (skinnyActions.contains(actionName)) {
