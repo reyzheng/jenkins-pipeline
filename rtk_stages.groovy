@@ -418,7 +418,7 @@ def execStage(actionName, stageName) {
     if (modules.coreActions.contains(actionName)) {
         def action = utils.loadAction(actionName)
         if (staticActions.contains(actionName)) {
-            action.func(stageName)
+            action.func(actionName, stageName)
         }
         else if (skinnyActions.contains(actionName)) {
 			def stageConfig = modules.configs[stageName].settings

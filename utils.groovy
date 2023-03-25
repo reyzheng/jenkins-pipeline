@@ -407,7 +407,7 @@ def unstashScriptedParams(stageConfigs) {
 }
 */
 
-def execPython(stageName) {
+def getPython() {
 	if (isUnix()) {
 		def statusPython = sh script: "python --version", returnStatus: true
 		def statusPython3 = sh script: "python3 --version", returnStatus: true
@@ -436,13 +436,22 @@ def execPython(stageName) {
 	}
 }
 
-def unstashConfig(stageName) {
-    def stageConfigs
+def unstashPyExec(actionName, stageName) {
+    def plainStageName = stageName.replaceAll("@", "at")
+
+	unstash name: "stash-python-${plainStageName}"
     dir (".pf-configs") {
-        def plainStageName = stageName.replaceAll("@", "at")
         unstash name: "stage-configs-${plainStageName}"
         //stageConfigs = readJSON file: "stage-config.json"
     }
+	
+	def python = utils.getPython()
+	if (isUnix()) {
+        sh "${python} ${actionName}.py .pf-configs/stage-config.json"
+	}
+	else {
+        bat "${python} ${actionName}.py .pf-configs\\stage-config.json"		
+	}
 }
 
 def loadAction(actionName) {

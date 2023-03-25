@@ -129,6 +129,9 @@ def init(stageName) {
 		writeJSON file: 'stage-config.json', json: mapConfig
 		stash name: "stash-config-${mapConfig.plainStageName}", includes: 'stage-config.json'
 	}
+    dir ('pipeline_scripts') {
+		stash name: "stash-python-${mapConfig.plainStageName}", includes: 'coverity.py'
+	}
 }
 
 def convertToList(rawConfig) {
@@ -641,17 +644,11 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
 }
 
 //def func(pipelineAsCode, buildConfig, buildPreloads) {
-def func(stageName) {
+def func(actionName, stageName) {
     unstash name: "stash-script-utils"
+
     def utils = load "utils.groovy"
-	utils.unstashConfig(stageName)
-	def python = utils.execPython(stageName)
-	if (isUnix()) {
-		sh "$python .pf-configs/stage-config.json"
-	}
-	else {
-		bat "$python .pf-configs\\stage-config.json"		
-	}
+	utils.pyExec(actionName, stageName)
 /*
     def validScriptTypes = ["inline", "file", "source", "groovy"]
     if (buildPreloads.actionName == "coverity") {
