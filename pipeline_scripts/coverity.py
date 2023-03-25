@@ -1,4 +1,6 @@
 # coverity.py
+import getopt
+import sys
 
 def coverity(configFile):
     print("config {}".format(configFile))
