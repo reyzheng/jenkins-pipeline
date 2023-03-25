@@ -324,8 +324,8 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
         pwdPath = bat (script: "echo %cd%", returnStdout: true).trim()
         pwdPath = pwdPath.readLines().drop(1).join(" ")
         // auto replace back slash
-		coverity_build_dir = coverity_build_dir.replaceAll("\/", "\\\\")
-		coverity_xml = coverity_xml.replaceAll("\/", "\\\\")
+		coverity_build_dir = coverity_build_dir.replaceAll("/", "\\\\")
+		coverity_xml = coverity_xml.replaceAll("/", "\\\\")
     }
 
     def coverity_command_prefix = ""
