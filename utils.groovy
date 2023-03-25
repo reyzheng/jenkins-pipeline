@@ -304,6 +304,120 @@ def commonInit(stageName, defaultConfigs) {
     return config
 }
 
+def staticInit(stageName, defaultConfigs) {
+    // check json config existence or create it
+    dir ("settings") {
+        def hasJsonConfig = fileExists "${stageName}_config.json"
+        if (hasJsonConfig == true) {
+            userScripts = readJSON file: "${stageName}_config.json"
+            // retrieve config from userScripts
+            for (def key in defaultConfigs.keySet()) {
+                if (userScripts."${key}" != null) {
+                    defaultConfigs."${key}" = userScripts."${key}"
+                }
+            }
+            if (stageName == 'post') {
+                print "userScripts " + userScripts
+            }
+        }
+        else {
+            try {
+                userScripts = load "${stageName}_config.groovy"
+                for (def key in defaultConfigs.keySet()) {
+                    try {
+                        defaultConfigs."${key}" = userScripts."${key}"
+                    }
+                    catch (e) {
+                        // not defined in userScripts
+                    }
+                }
+            }
+            catch (e) {
+                print "$stageName not configured " + e
+            }
+        }
+        defaultConfigs.stageName = stageName
+        defaultConfigs.plainStageName = stageName.replaceAll("@", "at")
+        defaultConfigs.actionName = extractActionName(stageName)
+        if (defaultConfigs.actionName == "composition") {
+            defaultConfigs.parallel_parameters = extractParallelParameters(defaultConfigs.parallel_parameters)
+            defaultConfigs.parallel_excludes = extractParameters(defaultConfigs.parallel_excludes)
+        }
+        else if (defaultConfigs.actionName == "source") {
+            if (env.PF_MAIN_SOURCE_STAGE) {
+                env.PF_MAIN_SOURCE_STAGE += ",${defaultConfigs.stageName}"
+            }
+            else {
+                env.PF_MAIN_SOURCE_STAGE = defaultConfigs.stageName
+            }
+            // copy to arr to avoid 'Scripts not permitted to use method net.sf.json.JSONArray join java.lang.String'
+            def arr = []
+            for (def i=0; i<defaultConfigs.scm_dsts.size(); i++) {
+                arr << defaultConfigs.scm_dsts[i]
+            }
+            env.PF_MAIN_SOURCE_DSTS = arr.join(',')
+        }
+        else if (defaultConfigs.actionName == "coverity") {
+            if (defaultConfigs.coverity_stream instanceof java.lang.String) {
+                // TODO: tell user deprecated
+                convertToList(defaultConfigs)
+            }
+        }
+        writeJSON file: "stage-config.json", json: defaultConfigs
+        stash name: "stage-configs-${defaultConfigs.plainStageName}", includes: "stage-config.json"
+    }
+    if (defaultConfigs.scriptableParams) {
+        // stash scripted params' script file
+        stashScriptedParamScripts(defaultConfigs.plainStageName, defaultConfigs)
+    }
+    return defaultConfigs
+}
+
+def unstashScriptedParams(stageConfigs) {
+    if (stageConfigs.scriptableParams) {
+        def scriptableParams = stageConfigs.scriptableParams
+        // TODO: refactor
+        def plainStageName = stageConfigs.plainStageName
+        for (def key in stageConfigs.keySet()) {
+            if (scriptableParams.contains(key)) {
+                // scripted params may be.
+                if (stageConfigs[key] instanceof net.sf.json.JSONArray || stageConfigs[key] instanceof java.util.ArrayList) {
+                    // like scm_branchs: ["master"]
+                    for (def i=0; i<stageConfigs[key].size(); i++) {
+                        stageConfigs[key][i] = extractScriptedParameter(stageConfigs[key][i], "stash-${plainStageName}-params-${key}-${i}")
+                    }
+                }
+                else if (stageConfigs[key] instanceof java.util.LinkedHashMap) {
+                    // like parallel_parameters: { "os": ["linux", "windows", "macos"] },
+                    for (def paramKey in stageConfigs[key].keySet()) {
+                        for (def i=0; i<stageConfigs[key][paramKey].size(); i++) {
+                            stageConfigs[key][paramKey][i] = extractScriptedParameter(stageConfigs[key][paramKey][i], "stash-${plainStageName}-params-${key}-${paramKey}-${i}")
+                        }
+                    }
+                }
+                else {
+                    // scalar variables: like string, boolean
+                    // ex. repo_path: "repo"
+                    stageConfigs[key] = extractScriptedParameter(stageConfigs[key], "stash-${plainStageName}-params-${key}")
+                }
+            }
+        }
+    }
+}
+
+def readJsonConfig(stageName) {
+    def stageConfigs
+    dir (".pf-utils") {
+        def plainStageName = stageName.replaceAll("@", "at")
+        unstash name: "stage-configs-${plainStageName}"
+        stageConfigs = readJSON file: "stage-config.json"
+    }
+    if (stageConfigs.scriptableParams) {
+        unstashScriptedParams(stageConfigs)
+    }
+    return stageConfigs
+}
+
 def loadAction(actionName) {
     def commonActions = ["config", "prebuild", "build", "postbuild", "test"]
     def action = null
