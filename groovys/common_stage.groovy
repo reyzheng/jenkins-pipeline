@@ -54,8 +54,8 @@ def func(pipelineAsCode, configs, actionConfig) {
             }
         }
 
-        def scriptTypes = config.settings."${actionName}_scripts_type"
-        def scripts = config.settings."${actionName}_scripts"    
+        def scriptTypes = configs.settings."${actionName}_scripts_type"
+        def scripts = configs.settings."${actionName}_scripts"    
         for (def i=0; i<scriptTypes.size(); i++) {
             if (validScriptTypes.contains(scriptTypes[i]) == false) {
                 continue
