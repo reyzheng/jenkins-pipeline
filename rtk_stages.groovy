@@ -413,7 +413,8 @@ def iterateToFile(stages, sourceOnly) {
 }
 
 def execStage(actionName, stageName) {
-	def staticActions = ['coverity']
+	//def staticActions = ['coverity']
+    def staticActions = []
     def skinnyActions = ['jira', 'source']
     if (modules.coreActions.contains(actionName)) {
         def action = utils.loadAction(actionName)
