@@ -654,7 +654,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         coverityConfig.scriptAction = true
         if (coverityConfig.has_stashes == true) {
             dir(".script") {
-                unstash "stash-script-${coverityPreloads.plainStageName}"
+                unstash name: "stash-script-${coverityPreloads.plainStageName}"
             }
         }
     }
@@ -673,7 +673,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         if (buildConfig.has_stashes == true) {
             dir(".script") {
                 unstash name: "stash-script-${buildPreloads.plainStageName}"
-                dir """
+                bat """
                     echo 672
                     dir
                 """
