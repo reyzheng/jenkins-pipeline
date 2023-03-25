@@ -447,10 +447,10 @@ def pyExec(actionName, stageName) {
 	
 	def python = utils.getPython()
 	if (isUnix()) {
-        sh "${python} ${actionName}.py .pf-configs/stage-config.json"
+        sh "${python} ${actionName}.py -c .pf-configs/stage-config.json"
 	}
 	else {
-        bat "${python} ${actionName}.py .pf-configs\\stage-config.json"		
+        bat "${python} ${actionName}.py -c .pf-configs\\stage-config.json"		
 	}
 }
 
