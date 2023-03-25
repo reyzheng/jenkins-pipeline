@@ -231,20 +231,10 @@ def loadUserConfigs() {
     
     // Load ugly coverity_config
     dir (settingPath) {
-        def coverityConfigExists
-        coverityConfigExists = fileExists "coverity_config.groovy"
-        if (coverityConfigExists) {
-            def coverityConfig = load "coverity_config.groovy"
-            if (coverityConfig.coverity_scan_enabled == true) {
-                requiredConfigs << settingPath + "/coverity_config.groovy"
-            }
-        }
-        coverityConfigExists = fileExists "coverity_config.json"
-        if (coverityConfigExists) {
-            def coverityConfig = load "coverity_config.json"
-            if (coverityConfig.coverity_scan_enabled == true) {
-                requiredConfigs << settingPath + "/coverity_config.json"
-            }
+        def coverityGroovyExists = fileExists "coverity_config.groovy"
+        def coverityJsonExists = fileExists "coverity_config.json"
+        if (coverityConfigExists || coverityJsonExists) {
+            requiredConfigs << settingPath + "/coverity_config.groovy"
         }
     }
 
