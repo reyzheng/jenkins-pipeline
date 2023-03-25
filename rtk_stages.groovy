@@ -233,7 +233,7 @@ def loadUserConfigs() {
     dir (settingPath) {
         def coverityGroovyExists = fileExists "coverity_config.groovy"
         def coverityJsonExists = fileExists "coverity_config.json"
-        if (coverityConfigExists || coverityJsonExists) {
+        if (coverityGroovyExists || coverityJsonExists) {
             requiredConfigs << settingPath + "/coverity_config.groovy"
         }
     }
