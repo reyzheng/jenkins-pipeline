@@ -369,6 +369,7 @@ def coverity_scan(coverityConfig, coverityPreloads, buildScriptType, buildScript
         }
         else {
             // TODO: auto replace back slash
+			coverity_build_dir = coverity_build_dir.replaceAll("/", "\\")
             bat "if exist ${coverity_xml} del ${coverity_xml} /f"
             bat 'md ' + coverity_build_dir
         }
