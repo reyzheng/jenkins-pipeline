@@ -86,7 +86,7 @@ def func(pipelineAsCode, configs, actionConfig) {
                         sh "mv -f ../${dstFile} ."
                     }
                     else {
-                        bat "move ..\\\"${dstFile}\" . /f"
+                        bat "move ..\\.script\\\"${dstFile}\" . /Y"
                     }
                     if (scriptTypes[i] == "source") {
                         sh ". " + dstFile
