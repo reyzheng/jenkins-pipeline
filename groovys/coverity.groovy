@@ -741,7 +741,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 }
                 dir(buildDir) {
                     coverityConfigScripted.refParent = true
-                    coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfig.scriptContents[i], coverityConfigIdx, scriptAction)
+                    coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfigScripted.scriptContents[i], coverityConfigIdx, coverityConfigScripted.scriptAction)
                 }
                 if (coverityConfigScripted.coverity_analyze_parent == "custom") {
                     dir(".gitscript") {
@@ -764,7 +764,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             dir(buildDir) {
                 coverityConfigScripted.refParent = false
                 coverityConfigScripted.coverity_clean_builddir = secondScanCleanDir
-                coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfig.scriptContents[i], coverityConfigIdx, scriptAction)
+                coverity_scan(coverityConfigScripted, coverityPreloads, coverityConfigScripted.types[i], coverityConfigScripted.scriptContents[i], coverityConfigIdx, coverityConfigScripted.scriptAction)
             }
         }
         env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS += "Build $branchSubDescription SUCCESS;"
