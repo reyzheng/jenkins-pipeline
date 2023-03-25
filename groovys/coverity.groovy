@@ -672,7 +672,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         coverityConfig.contents = buildConfig.build_scripts
         if (buildConfig.has_stashes == true) {
             dir(".script") {
-                unstash "stash-script-${buildPreloads.plainStageName}"
+                unstash name: "stash-script-${buildPreloads.plainStageName}"
                 dir """
                     echo 672
                     dir
