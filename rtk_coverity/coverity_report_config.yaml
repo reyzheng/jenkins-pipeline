@@ -1,0 +1,60 @@
+################## Sections that apply to all reports #############
+version:
+    schema-version: 6
+connection:
+    url: http://172.21.15.146:8080/
+    username:
+    ssl-ca-certs:
+project:
+title-page:
+    company-name: Realtek
+    project-name: SDK
+    project-version: 0.9
+    logo:
+    organizational-unit-name: Widgets
+    organizational-unit-term: Division
+    prepared-for: Customer
+    project-contact-email: jenkins@realtek.com
+    prepared-by: jenkins@realtek.com
+locale:
+issue-cutoff-count: 200
+snapshot-id:
+snapshot-date:
+issue-kind:
+components:
+disa-stig:
+################## CERT report #############
+cert-report:
+    target-level:
+################## Synopsys Software Integrity Report #############
+ssir-report:
+    analysis-date:
+    legal-text:
+################## Coverity Integrity Report #############
+cir-report:
+    project-description:
+    project-details:
+    target-integrity-level:
+    high-severity-name:
+    unspecified-severity-name:
+    trial:
+    loc-multiplier:
+################## Coverity Security Report #############
+security-report:
+    assurance-level-score: 90
+    assurance-level: AL1
+    severity-mapping: Carrier Grade
+    severity-mapping-description:
+    custom-severity-mapping:
+        modify-data: very high
+        read-data: very high
+        dos-unreliable-execution: very high
+        dos-resource-consumption: very high
+        execute-unauthorized-code: very high
+        gain-privileges: very high
+        bypass-protection-mechanism: very high
+        hide-activities: very high
+
+report-cwe-version:
+    owasp: 2021
+    sans: 2021
