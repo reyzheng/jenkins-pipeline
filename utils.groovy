@@ -296,6 +296,8 @@ def commonInit(stageName, defaultConfigs) {
 
     def config = [:]
     config.settings = defaultConfigs
+    config.settings.stageName = stageName
+    config.settings.plainStageName = stageName.replaceAll("@", "at")
     config.preloads = [:]
     config.preloads.stageName = stageName
     config.preloads.plainStageName = stageName.replaceAll("@", "at")

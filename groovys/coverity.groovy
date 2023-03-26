@@ -710,7 +710,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
     unstash name: "stash-script-utils"
     def utils = load "utils.groovy"
     def coverityConfigScripted = [:]
-    utils.unstashScriptedParamScripts(.plainStageName, coverityConfig, coverityConfigScripted)
+    utils.unstashScriptedParamScripts(coverityConfig.plainStageName, coverityConfig, coverityConfigScripted)
 
     try {
         for (def i=0; i<coverityConfigScripted.types.size(); i++) {
