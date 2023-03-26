@@ -266,7 +266,15 @@ def codingStandards(coverityConfig, idx) {
     return command
 }
 
-def coverity_scan(coverityConfig, buildIdx, idx) {
+def coverityScan(coverityConfig, buildIdx, idx) {
+    if (coverityConfig.coverity_scan_enabled == false || coverityConfig.coverity_scan_enabled == "false") {
+        print "Skip ${buildIdx}th coverity build"
+        return
+    }
+    else {
+        print "Start ${buildIdx}th coverity build"
+    }
+
     def buildScriptType = coverityConfig.types[buildIdx]
     def buildScript = coverityConfig.contents[buildIdx]
     def coverity_report_path = coverityConfig.coverity_report_path
@@ -632,14 +640,33 @@ def coverity_scan(coverityConfig, buildIdx, idx) {
                 covanalyzeConfigs.coverity_stream = stream
                 covanalyzeConfigs.coverity_snapshot = snapshotID
                 covanalyzeConfigs.coverity_build_root = pwdPath
-                def action = utils.loadAction("covanalyze")
-                action.func(null, covanalyzeConfigs, null)
+                if (coverityConfig.refParent == true) {
+                    writeJSON file: "covanalyze-${buildIdx}-parent.json", json: covanalyzeConfigs
+                }
+                else {
+                    writeJSON file: "covanalyze-${buildIdx}-commit.json", json: covanalyzeConfigs
+                }
             }
         }
     }
     catch (e) {
         unstable(message: "Coverity build is unstable " + e)
     }
+}
+
+def coverityAnalyze(buildIdx, refParent) {
+    def covanalyzeConfigs
+    if (refParent == true) {
+        covanalyzeConfigs = readJSON file: "covanalyze-${buildIdx}-parent.json"
+    }
+    else {
+        covanalyzeConfigs = readJSON file: "covanalyze-${buildIdx}-commit.json"
+    }
+
+    unstash name: "stash-script-utils"
+    def utils = load "utils.groovy"
+    def action = utils.loadAction("covanalyze")
+    action.func(null, covanalyzeConfigs, null)    
 }
 
 def func(pipelineAsCode, buildConfig, buildPreloads) {
@@ -691,13 +718,8 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
     def utils = load "utils.groovy"
     def coverityConfigScripted = [:]
     utils.unstashScriptedParamScripts(coverityPreloads.plainStageName, coverityConfig, coverityConfigScripted)
-    if (coverityConfigScripted.coverity_scan_enabled == false || coverityConfigScripted.coverity_scan_enabled == "false") {
-        print "Skip coverity analysis, build only"
-        def action = utils.loadAction("script")
-        action.func(pipelineAsCode, coverityConfigScripted, coverityPreloads)
-
-        return
-    }
+    /*
+    */
 
     try {
         print "685 " + coverityConfigScripted
@@ -757,7 +779,10 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
 
                 dir (buildDir) {
                     coverityConfigScripted.refParent = true
-                    coverity_scan(coverityConfigScripted, i, coverityConfigIdx)
+                    coverityScan(coverityConfigScripted, i, coverityConfigIdx)
+                    if (coverityConfigScripted.coverity_analyze_defects == true) {
+                        coverityAnalyze(i, coverityConfigScripted.refParent)
+                    }
                 }
                 if (coverityConfigScripted.coverity_analyze_parent == "custom") {
                     dir(".gitscript") {
@@ -781,7 +806,10 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
             dir (buildDir) {
                 coverityConfigScripted.refParent = false
                 coverityConfigScripted.coverity_clean_builddir = secondScanCleanDir
-                coverity_scan(coverityConfigScripted, i, coverityConfigIdx)
+                coverityScan(coverityConfigScripted, i, coverityConfigIdx)
+                if (coverityConfigScripted.coverity_analyze_defects == true) {
+                    coverityAnalyze(i, coverityConfigScripted.refParent)
+                }
             }
         }
         env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS += "Build $branchSubDescription SUCCESS;"
