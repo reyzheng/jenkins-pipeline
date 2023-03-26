@@ -671,24 +671,21 @@ def coverityAnalyze(buildIdx, refParent) {
 
 def func(pipelineAsCode, buildConfig, buildPreloads) {
     def coverityConfig
-    def coverityPreloads
 
     if (buildPreloads.actionName == "coverity") {
         // buildwithcoverity, script + coverity
         coverityConfig = buildConfig
-        coverityPreloads = buildPreloads
         
         coverityConfig.scriptAction = true
         if (coverityConfig.has_stashes == true) {
             dir(".script") {
-                unstash name: "stash-script-${coverityPreloads.plainStageName}"
+                unstash name: "stash-script-${buildPreloads.plainStageName}"
             }
         }
     }
     else {
         // buil + coverity
         coverityConfig = pipelineAsCode.configs["coverity"].settings
-        coverityPreloads = pipelineAsCode.configs["coverity"].preloads
 
         coverityConfig.scriptAction = false
         if (env.PF_MAIN_SOURCE_NAME) {
@@ -700,10 +697,6 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
         if (buildConfig.has_stashes == true) {
             dir(".script") {
                 unstash name: "stash-script-${buildPreloads.plainStageName}"
-                bat """
-                    echo 672
-                    dir
-                """
             }
         }
     }
@@ -717,13 +710,9 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
     unstash name: "stash-script-utils"
     def utils = load "utils.groovy"
     def coverityConfigScripted = [:]
-    utils.unstashScriptedParamScripts(coverityPreloads.plainStageName, coverityConfig, coverityConfigScripted)
-    /*
-    */
+    utils.unstashScriptedParamScripts(.plainStageName, coverityConfig, coverityConfigScripted)
 
     try {
-        print "685 " + coverityConfigScripted
-
         for (def i=0; i<coverityConfigScripted.types.size(); i++) {
             def buildDir = ""
             if (coverityConfigScripted.buildDirs) {
