@@ -386,6 +386,9 @@ def iterateToFile(stages, sourceOnly) {
                     content += "}\n"
                 }
             }
+            else if (actionName == "composition" && stageConfig.run_type == "SEQUENTIAL") {
+                content += formatComposition(stageConfig)
+            }
             else {
                 content += "stage('$realStageName') {\n"
                 content += "    steps {\n"
@@ -702,6 +705,47 @@ def startComposition(stageName) {
             }
         }
     }
+}
+
+def formatComposition(configs) {
+    //parallelBuild(configs.parallel_parameters, configs.parallel_excludes, configs.stages, configs.node, true)
+    def workspaceSuffix = ""
+    for (def key in configs.parallelParameters.keySet()) {
+        workspaceSuffix += "\${$key}"
+    }
+
+    def content = "stage('matrixbuild') {\n"
+    content += "    agent {\n"
+    content += "        node {\n"
+    content += "            label '${configs.nodes}'\n"
+    content += "            customWorkspace "\${WORKSPACE}_$workspaceSuffix"\n"
+    content += "        }\n"
+    content += "    }\n"
+    content += "    axes {\n"
+    for (def key in configs.parallelParameters.keySet()) {
+        workspaceSuffix += "\${$key}"
+        content += "        axis {\n"
+        content += "            name '${key}'\n"
+        values = parallelParameters[key].join(',')
+        content += "            values ${values}\n"
+        content += "        }\n"
+    }
+    content += "    }\n"
+    content += "    stages {\n"
+    content += "        stage('build') {\n"
+    content += "            steps {\n"
+    content += "                script {\n"
+    content += "                    if (!utils) {\n"
+    content += "                        utils = load 'utils.groovy'\n";
+    content += "                        pf = load('rtk_stages.groovy')\n";
+    content += "                        pf.init()\n";
+    content += "                    }\n"
+    //content += "        pf.execStage('$actionName', '$stageName')\n"
+    content += "                }\n"
+    content += "            }\n"
+    content += "        }\n"
+    content += "    }\n"
+    content += "}\n"
 }
 
 def start() {
