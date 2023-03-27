@@ -729,7 +729,7 @@ def formatComposition(configs) {
         buildBranch << "\${$key}"
     }
     buildBranch = buildBranch.join("_")
-    content += "            BUILD_BRANCH = '$buildBranch'\n"
+    content += "            BUILD_BRANCH_RAW = '$buildBranch'\n"
     content += "        }\n"
     content += "    axes {\n"
     for (def key in configs.parallel_parameters.keySet()) {
