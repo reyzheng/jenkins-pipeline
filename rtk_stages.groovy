@@ -719,7 +719,7 @@ def formatComposition(configs) {
     content += "    matrix {\n"
     content += "    agent {\n"
     content += "        node {\n"
-    content += "            label '${configs.nodes}'\n"
+    content += "            label '${configs.node}'\n"
     content += "            customWorkspace '\${WORKSPACE}_$workspaceSuffix'\n"
     content += "        }\n"
     content += "    }\n"
