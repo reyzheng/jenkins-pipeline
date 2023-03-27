@@ -728,7 +728,11 @@ def formatComposition(configs) {
         content += "        axis {\n"
         content += "            name '${key}'\n"
         print "730 " + configs.parallel_parameters[key]
-        def arr = configs.parallel_parameters[key]
+        def arr = []
+        for (def i=0; i<configs.parallel_parameters[key].size(); i++) {
+            arr << configs.parallel_parameters[key][i]
+        }
+        print "735 " + arr
         values = arr.join(',')
         content += "            values ${values}\n"
         content += "        }\n"
