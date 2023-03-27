@@ -710,19 +710,27 @@ def startComposition(stageName) {
 def formatComposition(configs) {
     //parallelBuild(configs.parallel_parameters, configs.parallel_excludes, configs.stages, configs.node, true)
     def workspaceSuffix = ""
-    print "713 " + configs
+    print "BDG formatComposition: " + configs
     for (def key in configs.parallel_parameters.keySet()) {
         workspaceSuffix += "\${$key}"
     }
 
     def content = "stage('matrixbuild') {\n"
     content += "    matrix {\n"
-    content += "    agent {\n"
-    content += "        node {\n"
-    content += "            label '${configs.node}'\n"
-    content += "            customWorkspace '\${WORKSPACE}_$workspaceSuffix'\n"
+    content += "        agent {\n"
+    content += "            node {\n"
+    content += "                label '${configs.node}'\n"
+    content += "                customWorkspace '\${WORKSPACE}_$workspaceSuffix'\n"
+    content += "            }\n"
     content += "        }\n"
-    content += "    }\n"
+    content += "        environment {\n"
+    def buildBranch = []
+    for (def key in configs.parallel_parameters.keySet()) {
+        buildBranch << "\${$key}"
+    }
+    buildBranch = buildBranch.join("_")
+    content += "            BUILD_BRANCH = '$buildBranch'\n"
+    content += "        }\n"
     content += "    axes {\n"
     for (def key in configs.parallel_parameters.keySet()) {
         workspaceSuffix += "\${$key}"
