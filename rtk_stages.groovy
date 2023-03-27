@@ -710,6 +710,7 @@ def startComposition(stageName) {
 def formatComposition(configs) {
     //parallelBuild(configs.parallel_parameters, configs.parallel_excludes, configs.stages, configs.node, true)
     def workspaceSuffix = ""
+    print "713 " + configs
     for (def key in configs.parallelParameters.keySet()) {
         workspaceSuffix += "\${$key}"
     }
