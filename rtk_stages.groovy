@@ -711,7 +711,7 @@ def formatComposition(configs) {
     //parallelBuild(configs.parallel_parameters, configs.parallel_excludes, configs.stages, configs.node, true)
     def workspaceSuffix = ""
     print "713 " + configs
-    for (def key in configs.parallelParameters.keySet()) {
+    for (def key in configs.parallel_parameters.keySet()) {
         workspaceSuffix += "\${$key}"
     }
 
@@ -723,11 +723,11 @@ def formatComposition(configs) {
     content += "        }\n"
     content += "    }\n"
     content += "    axes {\n"
-    for (def key in configs.parallelParameters.keySet()) {
+    for (def key in configs.parallel_parameters.keySet()) {
         workspaceSuffix += "\${$key}"
         content += "        axis {\n"
         content += "            name '${key}'\n"
-        values = parallelParameters[key].join(',')
+        values = configs.parallel_parameters[key].join(',')
         content += "            values ${values}\n"
         content += "        }\n"
     }
