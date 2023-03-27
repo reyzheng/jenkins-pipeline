@@ -727,7 +727,9 @@ def formatComposition(configs) {
         workspaceSuffix += "\${$key}"
         content += "        axis {\n"
         content += "            name '${key}'\n"
-        values = configs.parallel_parameters[key].join(',')
+        print "730 " + configs.parallel_parameters[key]
+        def arr = configs.parallel_parameters[key]
+        values = arr.join(',')
         content += "            values ${values}\n"
         content += "        }\n"
     }
