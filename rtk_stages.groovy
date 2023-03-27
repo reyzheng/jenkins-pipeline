@@ -738,18 +738,22 @@ def formatComposition(configs) {
     }
     content += "    }\n"
     content += "    stages {\n"
-    content += "        stage('build') {\n"
-    content += "            steps {\n"
-    content += "                script {\n"
-    content += "                    if (!utils) {\n"
-    content += "                        utils = load 'utils.groovy'\n";
-    content += "                        pf = load('rtk_stages.groovy')\n";
-    content += "                        pf.init()\n";
-    content += "                    }\n"
-    //content += "        pf.execStage('$actionName', '$stageName')\n"
-    content += "                }\n"
-    content += "            }\n"
-    content += "        }\n"
+    for (def i=0; i<configs.stages.size(); i++) {
+        def stageName = configs.stages[i]
+		def actionName = utils.extractActionName(stageName)
+        content += "        stage('${configs.stages[i]}') {\n"
+        content += "            steps {\n"
+        content += "                script {\n"
+        content += "                    if (!utils) {\n"
+        content += "                        utils = load 'utils.groovy'\n";
+        content += "                        pf = load('rtk_stages.groovy')\n";
+        content += "                        pf.init()\n";
+        content += "                    }\n"
+        content += "                    pf.execStage('$actionName', '$stageName')\n"
+        content += "                }\n"
+        content += "            }\n"
+        content += "        }\n"
+    }
     content += "    }\n"
     content += "    }\n" // matrix {
     content += "}\n"
