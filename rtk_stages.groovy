@@ -757,7 +757,7 @@ def formatComposition(configs) {
         content += "                        pf = load('rtk_stages.groovy')\n";
         content += "                        pf.init()\n";
         content += "                    }\n"
-        content += "                    sh 'pwd && ls -al'\n"
+        //content += "                    sh 'pwd && ls -al'\n"
         content += "                    pf.execStage('$actionName', '$stageName')\n"
         content += "                }\n"
         content += "            }\n"
