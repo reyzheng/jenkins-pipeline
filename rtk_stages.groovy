@@ -716,6 +716,7 @@ def formatComposition(configs) {
     }
 
     def content = "stage('matrixbuild') {\n"
+    content += "    matrix {\n"
     content += "    agent {\n"
     content += "        node {\n"
     content += "            label '${configs.nodes}'\n"
@@ -752,6 +753,7 @@ def formatComposition(configs) {
     content += "            }\n"
     content += "        }\n"
     content += "    }\n"
+    content += "    }\n" // matrix {
     content += "}\n"
 }
 
