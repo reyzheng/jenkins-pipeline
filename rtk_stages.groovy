@@ -729,7 +729,7 @@ def formatComposition(configs) {
         buildBranch << "\${$key}"
     }
     buildBranch = buildBranch.join("_")
-    content += "            BUILD_BRANCH_RAW = '$buildBranch'\n"
+    content += "            BUILD_BRANCH_RAW = \"$buildBranch\"\n"
     content += "        }\n"
     content += "    axes {\n"
     for (def key in configs.parallel_parameters.keySet()) {
@@ -757,6 +757,7 @@ def formatComposition(configs) {
         content += "                        pf = load('rtk_stages.groovy')\n";
         content += "                        pf.init()\n";
         content += "                    }\n"
+        content += "                    sh 'pwd && ls -al'\n"
         content += "                    pf.execStage('$actionName', '$stageName')\n"
         content += "                }\n"
         content += "            }\n"
