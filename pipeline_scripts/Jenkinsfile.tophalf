@@ -9,7 +9,10 @@ pipeline {
 	      // tips: do not add customworkspace here
 	      // error may occurr if agent moved to windows
     }
-    options { timestamps () }
+    options { 
+        skipDefaultCheckout true
+        timestamps () 
+    }
     stages {
         stage("PF-init") {
             steps {
