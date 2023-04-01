@@ -313,7 +313,7 @@ def pascCleanWs() {
         powershell """
 	    dir
 	    Remove-Item -recurse * -exclude ${pattern}
-	    dir
+	    dir source
 	"""
     }
 }
