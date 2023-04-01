@@ -120,6 +120,7 @@ def postStage(postStatus) {
 
 def sendEmail() {
     def postConfig = modules.configs["post"].settings
+    print "123 " + postConfig
     //def postPreloads = modules.configs["post"].preloads
     if (postConfig.mail_enabled == true) {
         def emailbody = """${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':
