@@ -11,7 +11,7 @@ pipeline {
     }
     options { 
         skipDefaultCheckout true
-        timestamps () 
+        //timestamps () 
     }
     stages {
         stage("PF-init") {
