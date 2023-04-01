@@ -305,9 +305,6 @@ def pascCleanWs() {
     print "Clean WS, excludes: " + excludes
     if (isUnix()) {
 	// find . -mindepth 1 ! -regex '^./\(source0\|source1\)\(/.*\)?' -delete
-        for (def i=0; i<excludes.size(); i++) {
-            excludes[i] = " -name ${excludes[i]} "
-        }
         def pattern = excludes.join("\\|")
         sh """
 	    echo before
