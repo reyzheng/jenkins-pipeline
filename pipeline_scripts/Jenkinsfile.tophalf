@@ -19,6 +19,7 @@ pipeline {
                 script {
 		    sh "echo tophalf"
 		    sh "pwd && ls -al"
+		    print scm.extensions
 		    //checkout scm
                     checkout([
                         $class: 'GitSCM',
