@@ -110,9 +110,11 @@ def postStage(postStatus) {
 	print "109 " + postStatus
         // mail
         if (postConfig.mail_conditions.contains(postStatus)) {
+    	    print "113 " + postStatus
             sendEmail()
+	    print "115 " + postStatus
         }
-	print "114 " + postStatus
+	print "117 " + postStatus
     }
 }
 
