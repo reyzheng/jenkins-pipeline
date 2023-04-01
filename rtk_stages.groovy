@@ -311,10 +311,10 @@ def pascCleanWs() {
         def pattern = excludes.join("\\|")
         sh """
 	    echo before
-            pwd && ls -al source
+            pwd && ls -al
             find . -mindepth 1 ! -regex '^./\\(${pattern}\\)\\(/.*\\)?' -delete
             echo after
-            pwd && ls -al && ls -al source
+            pwd && ls -al
 	"""
     }
     //cleanWs deleteDirs: true, patterns: excludes
