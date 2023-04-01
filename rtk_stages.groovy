@@ -272,7 +272,7 @@ def pascCleanWs() {
     def cleanWS = true
 
     print("test0 " + modules.global_vars.clean_ws)
-    print("test` " + modules.global_vars.preserve_source)
+    print("test1 " + modules.global_vars.preserve_source)
     cleanWS = modules.global_vars.clean_ws
     preserveSource = modules.global_vars.preserve_source
 
@@ -309,8 +309,12 @@ def pascCleanWs() {
         }
         def pattern = excludes.join("-or")
         sh """
+	    echo before
+            pwd && ls -al
             find . -not \\(${pattern}\\) -delete
-        """
+            echo after
+            pwd && ls -al
+	"""
     }
     //cleanWs deleteDirs: true, patterns: excludes
 }
