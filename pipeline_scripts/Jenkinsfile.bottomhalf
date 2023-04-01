@@ -24,7 +24,6 @@ stage('Archive') {
 */
     }
     post {
-    	/*
         always {
             script {
                 // enable logParser if scripts/logParserRule existed
@@ -43,7 +42,6 @@ stage('Archive') {
                 pf.postStage("failure")
             }
         }
-	*/
         unstable {
             script {
                 pf.postStage("unstable")
