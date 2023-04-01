@@ -6,8 +6,8 @@ pipeline {
     // 'agent none' allows the job to continue on the same node with the same files
     agent {
         label nodeLabel
-	      // tips: do not add customworkspace here
-	      // error may occurr if agent moved to windows
+	// tips: do not add customworkspace here
+        // error may occurr if agent moved to windows
     }
     options { 
         skipDefaultCheckout true
@@ -18,6 +18,9 @@ pipeline {
             steps {
                 script {
 		    sh "echo tophalf"
+		    sh "pwd && ls -al"
+		    checkout scm
+		    sh "echo tophalf2"
 		    sh "pwd && ls -al"
 		    dir(".pf-framework") {
 	                deleteDir()
