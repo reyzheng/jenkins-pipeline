@@ -312,7 +312,7 @@ def pascCleanWs() {
         sh """
 	    echo before
             pwd && ls -al source
-            find . -mindepth 1 ! -regex '^./\\(${pattern}\\)\(/.*\\)?' -delete
+            find . -mindepth 1 ! -regex '^./\\(${pattern}\\)\\(/.*\\)?' -delete
             echo after
             pwd && ls -al && ls -al source
 	"""
