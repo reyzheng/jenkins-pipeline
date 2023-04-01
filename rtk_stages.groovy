@@ -123,6 +123,7 @@ def sendEmail() {
     print "123 " + postConfig
     //def postPreloads = modules.configs["post"].preloads
     if (postConfig.mail_enabled == true) {
+	print "126 mail"
         def emailbody = """${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':
                         Check console output at ${env.BUILD_URL}"""
         if (postConfig.mail_body != "") {
