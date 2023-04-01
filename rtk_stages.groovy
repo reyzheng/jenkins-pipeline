@@ -81,11 +81,9 @@ def emailNotification() {
 }
 
 def postStage(postStatus) {
-    print "84 " + postStatus
     if (modules.configs["post"] == null) {
     }
     else {
-	print "87 " + postStatus
         def nodeName = ""
         if (modules.hasUserDefinedNodes == true) {
             nodeName = modules.global_vars.nodes[0]
@@ -107,23 +105,17 @@ def postStage(postStatus) {
                 }
             }
         }
-	print "109 " + postStatus
         // mail
         if (postConfig.mail_conditions.contains(postStatus)) {
-    	    print "113 " + postStatus
             sendEmail()
-	    print "115 " + postStatus
         }
-	print "117 " + postStatus
     }
 }
 
 def sendEmail() {
     def postConfig = modules.configs["post"].settings
-    print "123 " + postConfig
     //def postPreloads = modules.configs["post"].preloads
     if (postConfig.mail_enabled == true) {
-	print "126 mail"
         def emailbody = """${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':
                         Check console output at ${env.BUILD_URL}"""
         if (postConfig.mail_body != "") {
@@ -321,7 +313,7 @@ def pascCleanWs() {
             pwd && ls -al source
             find . -not \\(${pattern}\\) -delete
             echo after
-            pwd && ls -al source
+            pwd && ls -al && ls -al source
 	"""
     }
     //cleanWs deleteDirs: true, patterns: excludes
