@@ -11,6 +11,7 @@ import groovy.transform.Field
 // env.PF_SOURCE_REVISION
 // env.PF_MAIN_SOURCE_NAME
 // env.PF_MAIN_SOURCE_PLAINNAME
+// env.PF_SOURCE_DST_{i}
 
 def loadGlobalSettings() {
     def defaultConfigs = [
@@ -386,9 +387,6 @@ def iterateToFile(stages, sourceOnly) {
                     content += "}\n"
                 }
             }
-            else if (actionName == "composition" && stageConfig.run_type == "SEQUENTIAL") {
-                content += formatComposition(stageConfig)
-            }
             else {
                 content += "stage('$realStageName') {\n"
                 content += "    steps {\n"
@@ -705,67 +703,6 @@ def startComposition(stageName) {
             }
         }
     }
-}
-
-def formatComposition(configs) {
-    //parallelBuild(configs.parallel_parameters, configs.parallel_excludes, configs.stages, configs.node, true)
-    def workspaceSuffix = ""
-    print "BDG formatComposition: " + configs
-    for (def key in configs.parallel_parameters.keySet()) {
-        workspaceSuffix += "\${$key}"
-    }
-
-    def content = "stage('matrixbuild') {\n"
-    content += "    matrix {\n"
-    content += "        agent {\n"
-    content += "            node {\n"
-    content += "                label '${configs.node}'\n"
-    content += "                customWorkspace \"\${WORKSPACE}_$workspaceSuffix\"\n"
-    content += "            }\n"
-    content += "        }\n"
-    content += "        environment {\n"
-    def buildBranch = []
-    for (def key in configs.parallel_parameters.keySet()) {
-        buildBranch << "\${$key}"
-    }
-    buildBranch = buildBranch.join("_")
-    content += "            BUILD_BRANCH_RAW = \"$buildBranch\"\n"
-    content += "        }\n"
-    content += "    axes {\n"
-    for (def key in configs.parallel_parameters.keySet()) {
-        workspaceSuffix += "\${$key}"
-        content += "        axis {\n"
-        content += "            name '${key}'\n"
-        def arr = []
-        for (def i=0; i<configs.parallel_parameters[key].size(); i++) {
-            arr << "'${configs.parallel_parameters[key][i]}'"
-        }
-        values = arr.join(',')
-        content += "            values ${values}\n"
-        content += "        }\n"
-    }
-    content += "    }\n"
-    content += "    stages {\n"
-    for (def i=0; i<configs.stages.size(); i++) {
-        def stageName = configs.stages[i]
-		def actionName = utils.extractActionName(stageName)
-        content += "        stage('${configs.stages[i]}') {\n"
-        content += "            steps {\n"
-        content += "                script {\n"
-        content += "                    if (!utils) {\n"
-        content += "                        utils = load 'utils.groovy'\n";
-        content += "                        pf = load('rtk_stages.groovy')\n";
-        content += "                        pf.init()\n";
-        content += "                    }\n"
-        //content += "                    sh 'pwd && ls -al'\n"
-        content += "                    pf.execStage('$actionName', '$stageName')\n"
-        content += "                }\n"
-        content += "            }\n"
-        content += "        }\n"
-    }
-    content += "    }\n"
-    content += "    }\n" // matrix {
-    content += "}\n"
 }
 
 def start() {
