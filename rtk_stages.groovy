@@ -291,34 +291,19 @@ def pascCleanWs() {
                 def sourceName = sourceNames[j]
                 def sourcePlainName = sourcePlainNames[j]
                 for (def i=0; i<modules.configs[sourceName].settings.scm_counts; i++) {
+		    def exclude = [:]
                     def scmDst = modules.configs[sourceName].settings.scm_dsts[i]
                     // TODO: handle parameterized scm_dsts, like ${TEXT_DST}, ugly
                     scmDst = utils.extractScriptedParameter(scmDst, "stash-${sourcePlainName}-params-scm_dsts-${i}")
-                    excludes << scmDst
+		    exclude.pattern = "${scmDst}/**"
+		    exclude.type = "EXCLUDE"
+		    excludes << exclude
                 }
             }
         }
     }
     print "Clean WS, excludes: " + excludes
-    if (isUnix()) {
-	// find . -mindepth 1 ! -regex '^./\(source0\|source1\)\(/.*\)?' -delete
-        def pattern = excludes.join("\\|")
-        sh """
-            find . -mindepth 1 ! -regex '^./\\(${pattern}\\)\\(/.*\\)?' -delete
-	"""
-    }
-    else {
-	// Remove-Item -recurse * -exclude source0,source1
-	def pattern = excludes.join(" ")
-        bat """
-            rem @echo off
-            set "exclude_list=${pattern}"
-            for /f "tokens=* delims=" %%# in ('dir /b /a:d^| findstr /v "%exclude_list%"') do (
-                rd /s /q "%%~f#"
-            )
-            del /q *
-        """
-    }
+    cleanWs deleteDirs: true, patterns: excludes
 }
 
 def init() {
