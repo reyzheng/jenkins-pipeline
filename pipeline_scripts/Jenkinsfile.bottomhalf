@@ -43,6 +43,7 @@ stage('Archive') {
                 pf.postStage("failure")
             }
         }
+	*/
         unstable {
             script {
                 pf.postStage("unstable")
@@ -53,6 +54,5 @@ stage('Archive') {
                 pf.postStage("changed")
             }
         }
-	*/
     }
 }
