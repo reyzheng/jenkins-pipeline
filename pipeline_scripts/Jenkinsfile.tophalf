@@ -20,14 +20,10 @@ pipeline {
 		    sh "echo tophalf"
 		    sh "pwd && ls -al"
 		    print scm.extensions
-		    //checkout scm
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: scm.branches,
-                        doGenerateSubmoduleConfigurations: scm.doGenerateSubmoduleConfigurations,
-			extensions: [[$class: 'CleanBeforeCheckout']],
-                        userRemoteConfigs: scm.userRemoteConfigs
-                    ])
+		    dir(".pf-config") {
+		        checkout scm
+			stash name: "pf-config", includes: "**"
+		    }
                     sh "echo tophalf2"
 		    sh "pwd && ls -al"
 		    dir(".pf-framework") {
@@ -43,6 +39,7 @@ pipeline {
 		        stash name: "pf-framework", includes: "**"
     		    }
                     unstash name: "pf-framework"
+                    unstash name: "pf-config"
 		    utils = load "utils.groovy"
 		    pf = load("rtk_stages.groovy")
 	    	    pf.init()
