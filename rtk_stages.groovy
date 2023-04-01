@@ -81,6 +81,7 @@ def emailNotification() {
 }
 
 def postStage(postStatus) {
+    print "84 " + postStatus
     if (modules.configs["post"] == null) {
     }
     else {
