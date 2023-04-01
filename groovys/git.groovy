@@ -40,7 +40,17 @@ def func(stageName) {
     if (configs.enabled == true) {
         dir (configs.dst) {
             if (configs.preserve == false || configs.preserve == 'false') {
+                print "git: clean workspace"
                 deleteDir()
+            }
+            else {
+                print "git: preserve workspace"
+                if (isUnix()) {
+                    sh "pwd && ls -al"
+                }
+                else {
+                    bat "dir"
+                }
             }
 
             def shallowClone = false
