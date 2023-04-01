@@ -307,12 +307,12 @@ def pascCleanWs() {
         for (def i=0; i<excludes.size(); i++) {
             excludes[i] = " -name ${excludes[i]} "
         }
-        def pattern = excludes.join("\|")
+        def pattern = excludes.join("\\|")
 	# find . -mindepth 1 ! -regex '^./\(source0\|source1\)\(/.*\)?' -delete
         sh """
 	    echo before
             pwd && ls -al source
-            find . -mindepth 1 ! -regex '^./\(${pattern}\)\(/.*\)?' -delete
+            find . -mindepth 1 ! -regex '^./\\(${pattern}\\)\(/.*\\)?' -delete
             echo after
             pwd && ls -al && ls -al source
 	"""
