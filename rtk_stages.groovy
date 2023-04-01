@@ -309,12 +309,15 @@ def pascCleanWs() {
     }
     else {
 	// Remove-Item -recurse * -exclude source0,source1
-	def pattern = excludes.join(",")
-        powershell """
-	    dir
-	    Remove-Item -recurse * -exclude ${pattern}
-	    dir source
-	"""
+	def pattern = excludes.join(" ")
+        bat """
+            @echo off
+            set "exclude_list=${pattern}"
+            for /f "tokens=* delims=" %%# in ('dir /b /a:d^| findstr /v "%exclude_list%"') do (
+                rd /s /q "%%~f#"
+            )
+            del /q *
+        """
     }
 }
 
