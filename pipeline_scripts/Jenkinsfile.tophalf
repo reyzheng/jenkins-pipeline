@@ -21,8 +21,6 @@ pipeline {
 		        checkout scm
 			stash name: "pf-config", includes: "**"
 		    }
-                    sh "echo tophalf2"
-		    sh "pwd && ls -al"
 		    dir(".pf-framework") {
 	                deleteDir()
 			if (isUnix() == true) {
