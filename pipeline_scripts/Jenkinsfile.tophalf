@@ -19,8 +19,15 @@ pipeline {
                 script {
 		    sh "echo tophalf"
 		    sh "pwd && ls -al"
-		    checkout scm
-		    sh "echo tophalf2"
+		    //checkout scm
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: scm.branches,
+                        doGenerateSubmoduleConfigurations: scm.doGenerateSubmoduleConfigurations,
+                        extensions: scm.extensions,
+                        userRemoteConfigs: scm.userRemoteConfigs
+                    ])
+                    sh "echo tophalf2"
 		    sh "pwd && ls -al"
 		    dir(".pf-framework") {
 	                deleteDir()
