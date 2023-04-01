@@ -271,16 +271,10 @@ def pascCleanWs() {
     def preserveSource = false
     def cleanWS = true
 
-    try {
-        cleanWS = modules.global_vars.clean_ws
-    }
-    catch (e) {
-    }
-    try {
-        preserveSource = modules.global_vars.preserve_source
-    }
-    catch (e) {
-    }
+    print("test0 " + modules.global_vars.clean_ws)
+    print("test` " + modules.global_vars.preserve_source)
+    cleanWS = modules.global_vars.clean_ws
+    preserveSource = modules.global_vars.preserve_source
 
     if (preserveSource == true || preserveSource == "true") {
         modules.global_vars.preserve_source = true
@@ -300,21 +294,25 @@ def pascCleanWs() {
                 def sourceName = sourceNames[j]
                 def sourcePlainName = sourcePlainNames[j]
                 for (def i=0; i<modules.configs[sourceName].settings.scm_counts; i++) {
-                    def exclude = [:]
                     def scmDst = modules.configs[sourceName].settings.scm_dsts[i]
-
                     // TODO: handle parameterized scm_dsts, like ${TEXT_DST}, ugly
                     scmDst = utils.extractScriptedParameter(scmDst, "stash-${sourcePlainName}-params-scm_dsts-${i}")
-
-                    exclude.pattern = "${scmDst}/**"
-                    exclude.type = "EXCLUDE"
-                    excludes << exclude
+                    excludes << scmDst
                 }
             }
         }
     }
     print "Clean WS, excludes: " + excludes
-    cleanWs deleteDirs: true, patterns: excludes
+    if (isUnix()) {
+        for (def i=0; i<excludes.size(); i++) {
+            excludes[i] = " -name ${excludes[i]} "
+        }
+        def pattern = excludes.join("-or")
+        sh """
+            find . -not \(${pattern}\) -delete
+        """
+    }
+    //cleanWs deleteDirs: true, patterns: excludes
 }
 
 def init() {
