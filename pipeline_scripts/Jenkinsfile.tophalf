@@ -17,14 +17,12 @@ pipeline {
         stage("PF-init") {
             steps {
                 script {
-		    sh "echo tophalf"
-		    sh "pwd && ls -al"
 		    dir(".pf-config") {
 		        checkout scm
 			stash name: "pf-config", includes: "**"
 		    }
                     sh "echo tophalf2"
-		    sh "pwd && ls -al"
+		    sh "pwd && ls -al source"
 		    dir(".pf-framework") {
 	                deleteDir()
 			if (isUnix() == true) {
