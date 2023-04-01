@@ -25,7 +25,7 @@ pipeline {
                         $class: 'GitSCM',
                         branches: scm.branches,
                         doGenerateSubmoduleConfigurations: scm.doGenerateSubmoduleConfigurations,
-                        extensions: scm.extensions,
+			extensions: [[$class: 'CleanBeforeCheckout']],
                         userRemoteConfigs: scm.userRemoteConfigs
                     ])
                     sh "echo tophalf2"
