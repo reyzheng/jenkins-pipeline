@@ -271,11 +271,8 @@ def pascCleanWs() {
     def preserveSource = false
     def cleanWS = true
 
-    print("test0 " + modules.global_vars.clean_ws)
-    print("test1 " + modules.global_vars.preserve_source)
     cleanWS = modules.global_vars.clean_ws
     preserveSource = modules.global_vars.preserve_source
-
     if (preserveSource == true || preserveSource == "true") {
         modules.global_vars.preserve_source = true
     }
@@ -307,14 +304,18 @@ def pascCleanWs() {
 	// find . -mindepth 1 ! -regex '^./\(source0\|source1\)\(/.*\)?' -delete
         def pattern = excludes.join("\\|")
         sh """
-	    echo before
-            pwd && ls -al
             find . -mindepth 1 ! -regex '^./\\(${pattern}\\)\\(/.*\\)?' -delete
-            echo after
-            pwd && ls -al
 	"""
     }
-    //cleanWs deleteDirs: true, patterns: excludes
+    else {
+	// Remove-Item -recurse * -exclude source0,source1
+	def pattern = excludes.join(",")
+        powershell """
+	    dir
+	    Remove-Item -recurse * -exclude ${pattern}
+	    dir
+	"""
+    }
 }
 
 def init() {
