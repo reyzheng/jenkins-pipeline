@@ -318,10 +318,10 @@ def pascCleanWs() {
         def pattern = excludes.join("-or")
         sh """
 	    echo before
-            pwd && ls -al
+            pwd && ls -al source
             find . -not \\(${pattern}\\) -delete
             echo after
-            pwd && ls -al
+            pwd && ls -al source
 	"""
     }
     //cleanWs deleteDirs: true, patterns: excludes
