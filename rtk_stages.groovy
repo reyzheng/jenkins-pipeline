@@ -312,13 +312,11 @@ def pascCleanWs() {
 	def pattern = excludes.join(" ")
         bat """
             rem @echo off
-	    dir
             set "exclude_list=${pattern}"
             for /f "tokens=* delims=" %%# in ('dir /b /a:d^| findstr /v "%exclude_list%"') do (
                 rd /s /q "%%~f#"
             )
             del /q *
-	    dir
         """
     }
 }
