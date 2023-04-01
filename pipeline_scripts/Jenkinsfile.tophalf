@@ -19,7 +19,6 @@ pipeline {
                 script {
 		    sh "echo tophalf"
 		    sh "pwd && ls -al"
-		    print scm.extensions
 		    dir(".pf-config") {
 		        checkout scm
 			stash name: "pf-config", includes: "**"
