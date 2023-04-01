@@ -176,10 +176,10 @@ def scm_checkout(vars, i) {
         def repoPath = vars.repo_path
         def repoGroup = ""
         try {
-            repoGroup = vars.scm_repo_manifest_goups[i]
+            repoGroup = vars.scm_repo_manifest_groups[i]
         }
         catch(e) {
-            // scm_repo_manifest_goups not configured
+            // scm_repo_manifest_groups not configured
         }
         def repoConfig = [:]
         def repoMirror = ""
@@ -252,6 +252,7 @@ def func(pipelineAsCode, stageConfigsRaw, stagePreloads) {
         return
     }
     dir (".pf-source") {
+        print "source: clean .pf-source"
         deleteDir()
     }
     def stageConfigs = [:]
