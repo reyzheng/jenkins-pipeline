@@ -84,6 +84,7 @@ def postStage(postStatus) {
     if (modules.configs["post"] == null) {
     }
     else {
+	print "87 " + postStatus
         def nodeName = ""
         if (modules.hasUserDefinedNodes == true) {
             nodeName = modules.global_vars.nodes[0]
@@ -105,10 +106,12 @@ def postStage(postStatus) {
                 }
             }
         }
+	print "109 " + postStatus
         // mail
         if (postConfig.mail_conditions.contains(postStatus)) {
             sendEmail()
         }
+	print "114 " + postStatus
     }
 }
 
