@@ -14,12 +14,14 @@ pipeline {
         stage("PF-init") {
             steps {
                 script {
+		    sh "echo tophalf"
+		    sh "pwd && ls -al"
 		    dir(".pf-framework") {
 	                deleteDir()
-			                  if (isUnix() == true) {
-			                      //sh "GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b develop ."
-			                      sh "GIT_SSL_NO_VERIFY=true git clone https://github.com/reyzheng/jenkins-pipeline.git --depth 1 -b main ."
-			              }
+			if (isUnix() == true) {
+			    //sh "GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b develop ."
+			    sh "GIT_SSL_NO_VERIFY=true git clone https://github.com/reyzheng/jenkins-pipeline.git --depth 1 -b main ."
+			}
                         else {
 			    //bat "set GIT_SSL_NO_VERIFY=true && git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b develop ."
 		            bat "set GIT_SSL_NO_VERIFY=true && git clone https://github.com/reyzheng/jenkins-pipeline.git --depth 1 -b main ."
