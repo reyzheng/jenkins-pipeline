@@ -18,7 +18,7 @@ def parseUrl(url) {
         ret << "${protocol}//${addr}"
         ret << path
     }
-
+    
     return ret
 }
 
