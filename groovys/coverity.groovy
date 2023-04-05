@@ -51,7 +51,7 @@ def init(stageName) {
         coverity_snapshot_version: [],
         coverity_snapshot_description: [],
 
-        scriptableParams: ["enable", "coverity_scan_enabled", "coverity_analyze_parent", "coverity_project", "coverity_stream", "coverity_comptype", "coverity_comptype_gcc", "coverity_snapshot_version", "coverity_snapshot_description"]
+        scriptableParams: ["enable", "coverity_analyze_defects", "coverity_scan_enabled", "coverity_analyze_parent", "coverity_project", "coverity_stream", "coverity_comptype", "coverity_comptype_gcc", "coverity_snapshot_version", "coverity_snapshot_description"]
     ]
     def mapConfig = utils.commonInit(stageName, defaultConfigs)
 
@@ -82,7 +82,7 @@ def init(stageName) {
         }
     }
 
-    if (mapConfig.settings.coverity_analyze_defects == true) {
+    if (mapConfig.settings.coverity_analyze_defects.toString() == "true") {
         dir ("groovys") {
             stash name: "stash-actions-covanalyze", includes: "covanalyze.groovy"
         }
@@ -123,6 +123,10 @@ def init(stageName) {
             stash name: 'stash-coverity-checkout-parent', includes: 'checkout-*.sh'
         }
         catch(e) {}
+    }
+
+    dir('pipeline_scripts') {
+        stash name: 'stash-coverity-py', includes: 'coverity.py'
     }
 
     return mapConfig
@@ -222,6 +226,8 @@ def extractAnalyzeArgs(coverityConfig, idx, underUnix) {
     }
     def sourcePath = env."PF_SOURCE_DST_${idx}"
     // analyze realtek commit file only
+    // TODO: -tp at cov-manage-emit, instead of cov-analysis
+    // cov-manage-emit --dir idir --tu-pattern "file('.*/data/coverity/projects/aaa/test/*')" delete
     if (coverityConfig.coverity_analyze_rtkonly == true) {
         def rtkFiles = [:]
         def tuPatterns = []
@@ -266,6 +272,36 @@ def codingStandards(coverityConfig, idx) {
     return command
 }
 
+def calTuPattern(coverityConfig, idx, underUnix) {
+    if (coverityConfig.coverity_pattern_specified[idx] == "PF_DIFF_PREV") {
+        dir ('.pf-coverity') {
+            unstash name: 'stash-coverity-py'//, includes: 'coverity.py'
+        }
+        def sourceDir = env."PF_SOURCE_DST_${idx}"
+        def utils = load "utils.groovy"
+        def pythonExec = utils.getPython()
+        def diffLines = captureStdout("${pythonExec} .pf-coverity/coverity.py -c PF_DIFF_PREV -s ${sourceDir}", underUnix)
+        def tuPattern = diffLines.join("||")
+        print ("PF_DIFF_PREV: ${tuPattern}")
+        def analyzeArgs = " --tu-pattern \"${tuPattern}\""
+        return analyzeArgs
+    }
+    else {
+        def patterns = coverityConfig.coverity_pattern_specified[idx].split(",")
+        // --tu-pattern "file('path/to/dira/.*') || file('path/to/dirb/.*')"
+        for (def i=0; i<patterns.size(); i++) {
+            if (patterns[i].endsWith("/") || patterns[i].endsWith("\\")) {
+                // directory
+                patterns[i] = patterns[i] + ".*"
+            }
+            patterns[i] = "file('" + patterns[i] + "')"
+        }
+        def tuPattern = patterns.join("||")
+        def analyzeArgs = " --tu-pattern \"${tuPattern}\""
+        return analyzeArgs
+    }
+}
+
 def coverityScan(coverityConfig, buildIdx, idx) {
     if (coverityConfig.coverity_scan_enabled == false || coverityConfig.coverity_scan_enabled == "false") {
         print "Skip ${buildIdx}th coverity build"
@@ -277,7 +313,6 @@ def coverityScan(coverityConfig, buildIdx, idx) {
 
     def buildScriptType = coverityConfig.types[buildIdx]
     def buildScript = coverityConfig.contents[buildIdx]
-    def coverity_report_path = coverityConfig.coverity_report_path
     def coverity_scan_toolbox = coverityConfig.coverity_scan_toolbox
     def coverity_scan_path = coverityConfig.coverity_scan_path
     def coverity_xml = coverityConfig.coverity_xml
@@ -448,17 +483,7 @@ def coverityScan(coverityConfig, buildIdx, idx) {
         def extraBuildArgs = ""
         def extraAnalyzeArgs = extractAnalyzeArgs(coverityConfig, idx, underUnix)
         if (coverityConfig.coverity_pattern_specified.size() > idx) {
-            def patterns = coverityConfig.coverity_pattern_specified[idx].split(",")
-            // --tu-pattern "file('path/to/dira/.*') || file('path/to/dirb/.*')"
-            for (def i=0; i<patterns.size(); i++) {
-                if (patterns[i].endsWith("/") || patterns[i].endsWith("\\")) {
-                    // directory
-                    patterns[i] = patterns[i] + ".*"
-                }
-                patterns[i] = "file('" + patterns[i] + "')"
-            }
-            def tuPattern = patterns.join("||")
-            extraAnalyzeArgs += " --tu-pattern \"${tuPattern}\""
+            extraAnalyzeArgs += calTuPattern(coverityConfig, idx, underUnix)
         }
         else if (coverityConfig.coverity_pattern_excluded.size() > idx) {
             def patterns = coverityConfig.coverity_pattern_excluded[idx].split(",")
@@ -513,7 +538,7 @@ def coverityScan(coverityConfig, buildIdx, idx) {
             else {
                 dstFile = buildScript
                 if (underUnix) {
-                    sh "mv -f ../${dstFile} ."
+                    sh "mv -f ../.script/${dstFile} ."
                 }
                 else {
                     bat "move /Y ..\\.script\\\"${dstFile}\" ."
@@ -537,12 +562,16 @@ def coverityScan(coverityConfig, buildIdx, idx) {
         writeFile file: '.coverity.license.config', text: licenseServer
         def coverityCodingStandards = codingStandards(coverityConfig, idx)
         def coverityAnalyzeScript = coverity_command_prefix + "cov-analyze -sf .coverity.license.config --dir $coverity_build_dir ${extraAnalyzeArgs} @@checkers ${coverityCodingStandards}"
-        if (underUnix == true) {
-            sh coverityAnalyzeScript
+        def analyzeOutputLines = captureStdout(coverityAnalyzeScript, underUnix)
+        def defectsCount = 0
+        for (analyzeOutputLine in analyzeOutputLines) {
+            if (analyzeOutputLine.startsWith("Defect occurrences found")) {
+                def tokens = analyzeOutputLine.split()
+                defectsCount = tokens[4]
+                break
+            }
         }
-        else {
-            bat coverityAnalyzeScript
-        }
+        print "Defects count: ${defectsCount}"
 
         // cov-commit
         def stream = coverity_stream
@@ -568,6 +597,13 @@ def coverityScan(coverityConfig, buildIdx, idx) {
                 }
             }
 
+            def commitOutputLines = captureStdout(commitScript, underUnix)
+            for (commitOutputLine in commitOutputLines) {
+                if (commitOutputLine.startsWith("New snapshot ID ")) {
+                    def tokens = commitOutputLine.split(" ")
+                    snapshotID = tokens[3].toInteger()
+                }
+            }
             def htmlReportScript
             if (coverityConfig.coverity_local_report == true) {
                 htmlReportScript = coverity_command_prefix + "cov-format-errors -sf .coverity.license.config --dir $coverity_build_dir --html-output coverityReport"
@@ -575,7 +611,6 @@ def coverityScan(coverityConfig, buildIdx, idx) {
             else {
                 htmlReportScript = "echo skip_local_report"
             }
-            def commitOutputLines = captureStdout(commitScript, underUnix)
             if (underUnix == true) {
                 sh "rm -rf coverityReport"
                 sh htmlReportScript
@@ -584,30 +619,28 @@ def coverityScan(coverityConfig, buildIdx, idx) {
                 bat "if exist coverityReport rd coverityReport /s /q"
                 bat htmlReportScript
             }
-            for (commitOutputLine in commitOutputLines) {
-                if (commitOutputLine.startsWith("New snapshot ID ")) {
-                    def tokens = commitOutputLine.split(" ")
-                    snapshotID = tokens[3].toInteger()
-                }
-            }
             //snapshotID = 29285
             print "Got snapshotID ${snapshotID}"
             if (env.BUILD_BRANCH != null) {
                 if (coverityConfig.refParent == true) {
+                    env."${env.BUILD_BRANCH}_COV_COUNT_PARENT" = defectsCount
                     env."${env.BUILD_BRANCH}_COV_STREAM_PARENT" = stream
                     env."${env.BUILD_BRANCH}_COV_SNAPSHOT_PARENT" = snapshotID
                 }
                 else {
+                    env."${env.BUILD_BRANCH}_COV_COUNT" = defectsCount
                     env."${env.BUILD_BRANCH}_COV_STREAM" = stream
                     env."${env.BUILD_BRANCH}_COV_SNAPSHOT" = snapshotID
                 }
             }
             else {
                 if (coverityConfig.refParent == true) {
+                    env."COV_COUNT_PARENT" = defectsCount
                     env."COV_STREAM_PARENT" = stream
                     env."COV_SNAPSHOT_PARENT" = snapshotID
                 }
                 else {
+                    env."COV_COUNT" = defectsCount
                     env."COV_STREAM" = stream
                     env."COV_SNAPSHOT" = snapshotID
                 }
@@ -632,11 +665,16 @@ def coverityScan(coverityConfig, buildIdx, idx) {
             }
 
             // call covanalyze to do coverity analysis
-            if (coverityConfig.coverity_analyze_defects == true) {
+            if (coverityConfig.coverity_analyze_defects.toString() == "true") {
                 def covanalyzeConfigs = coverityConfig
 
                 covanalyzeConfigs.coverity_build_dir = coverityConfig.coverity_build_dir + idx
-                covanalyzeConfigs.coverity_project = coverityConfig.coverity_project[idx]
+                if (coverityConfig.coverity_project[idx]) {
+                    covanalyzeConfigs.coverity_project = coverityConfig.coverity_project[idx]
+                }
+                else {
+                    covanalyzeConfigs.coverity_project = ""
+                }
                 covanalyzeConfigs.coverity_stream = stream
                 covanalyzeConfigs.coverity_snapshot = snapshotID
                 covanalyzeConfigs.coverity_build_root = pwdPath
@@ -663,6 +701,7 @@ def coverityAnalyze(buildIdx, refParent) {
         covanalyzeConfigs = readJSON file: "covanalyze-${buildIdx}-commit.json"
     }
 
+    print "Start ${buildIdx}th coverity analyze, snapshot: ${covanalyzeConfigs.coverity_snapshot}"
     unstash name: "stash-script-utils"
     def utils = load "utils.groovy"
     def action = utils.loadAction("covanalyze")
@@ -733,9 +772,8 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 coverityConfigIdx = 0
             }
             def secondScanCleanDir = coverityConfigScripted.coverity_clean_builddir
-            if (coverityConfigScripted.coverity_analyze_parent == "prev" ||
-                    coverityConfigScripted.coverity_analyze_parent == "branch" ||
-                    coverityConfigScripted.coverity_analyze_parent == "custom") {
+            def validOptions = ["prev", "branch", "custom"]
+            if (validOptions.contains(coverityConfigScripted.coverity_analyze_parent)) {
                 def varname
                 secondScanCleanDir = false
                 if (env.BUILD_BRANCH) {
@@ -769,7 +807,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 dir (buildDir) {
                     coverityConfigScripted.refParent = true
                     coverityScan(coverityConfigScripted, i, coverityConfigIdx)
-                    if (coverityConfigScripted.coverity_analyze_defects == true) {
+                    if (coverityConfigScripted.coverity_analyze_defects.toString() == "true") {
                         coverityAnalyze(i, coverityConfigScripted.refParent)
                     }
                 }
@@ -796,7 +834,7 @@ def func(pipelineAsCode, buildConfig, buildPreloads) {
                 coverityConfigScripted.refParent = false
                 coverityConfigScripted.coverity_clean_builddir = secondScanCleanDir
                 coverityScan(coverityConfigScripted, i, coverityConfigIdx)
-                if (coverityConfigScripted.coverity_analyze_defects == true) {
+                if (coverityConfigScripted.coverity_analyze_defects.toString() == "true") {
                     coverityAnalyze(i, coverityConfigScripted.refParent)
                 }
             }
