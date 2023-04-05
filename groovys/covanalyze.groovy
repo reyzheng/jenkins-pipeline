@@ -522,6 +522,7 @@ def func(pipelineAsCode, configs, preloads) {
             print "Archive preview-report-committer.json"
         }
 
+        /*
         dir (".coverityDefects") {
             for (def cid in cidsFoundAuthor.keySet()) {
                 print "get defect ${cid} html report"
@@ -536,7 +537,6 @@ def func(pipelineAsCode, configs, preloads) {
             }
         }
 
-        /*
         def defectsReportFile
         if (env.BUILD_BRANCH != null) {
             defectsReportFile = "defectsReport-${env.BUILD_BRANCH}.zip"
