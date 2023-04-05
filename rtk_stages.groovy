@@ -291,13 +291,15 @@ def pascCleanWs() {
                 def sourceName = sourceNames[j]
                 def sourcePlainName = sourcePlainNames[j]
                 for (def i=0; i<modules.configs[sourceName].settings.scm_counts; i++) {
-		    def exclude = [:]
+                    def exclude = [:]
                     def scmDst = modules.configs[sourceName].settings.scm_dsts[i]
+
                     // TODO: handle parameterized scm_dsts, like ${TEXT_DST}, ugly
                     scmDst = utils.extractScriptedParameter(scmDst, "stash-${sourcePlainName}-params-scm_dsts-${i}")
-		    exclude.pattern = "${scmDst}/**"
-		    exclude.type = "EXCLUDE"
-		    excludes << exclude
+
+                    exclude.pattern = "${scmDst}/**"
+                    exclude.type = "EXCLUDE"
+                    excludes << exclude
                 }
             }
         }
