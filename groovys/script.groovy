@@ -79,7 +79,7 @@ def func(pipelineAsCode, configs, preloads) {
 
     try {
         if (configs.has_stashes == true) {
-            dir(".script") {
+            dir ('.script') {
                 unstash "stash-script-${preloads.plainStageName}"
             }
         }
@@ -173,14 +173,6 @@ def func(pipelineAsCode, configs, preloads) {
                 }
             }
         }
-
-        /*
-        if (configs.has_stashes == true) {
-            dir(".script") {
-                deleteDir()
-            }
-        }
-        */
 
         if (env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS") {
             env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS" += "$reportStageName SUCCESS;"
