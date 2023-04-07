@@ -217,42 +217,27 @@ def captureStdout(command, underUnix) {
     return stdout
 }
 
+def coverityManageEmit(idir, buildIdx, covPath) {
+    def sourceDir = env."PF_SOURCE_DST_${buildIdx}"
+
+    dir ('.pf-coverity') {
+            unstash name: 'stash-coverity-py'//, includes: 'coverity.py'
+    }
+    def utils = load "utils.groovy"
+    def pythonExec = utils.getPython()
+    // python coverity.py -c PF_RTK_ONLY -s /home/reycheng/coverity/coverity-test/practice/demo/coverity/quick-start -i coverity/build
+    if (covPath != "") {
+        covPath = "-e ${covPath}"
+    }
+    captureStdout("${pythonExec} .pf-coverity/coverity.py -c PF_RTK_ONLY -s ${sourceDir} -i ${idir} ${covPath}", isUnix())
+}
+
 def extractAnalyzeArgs(coverityConfig, idx, underUnix) {
     def extraAnalyzeArgs = ""
     if (coverityConfig.coverity_analyze_option[idx]) {
         extraAnalyzeArgs = coverityConfig.coverity_analyze_option[idx]
         extraAnalyzeArgs = extraAnalyzeArgs.split(",")
         extraAnalyzeArgs = extraAnalyzeArgs.join(" ")
-    }
-    def sourcePath = env."PF_SOURCE_DST_${idx}"
-    // analyze realtek commit file only
-    // TODO: -tp at cov-manage-emit, instead of cov-analysis
-    // cov-manage-emit --dir idir --tu-pattern "file('.*/data/coverity/projects/aaa/test/*')" delete
-    if (coverityConfig.coverity_analyze_rtkonly == true) {
-        def rtkFiles = [:]
-        def tuPatterns = []
-        def gitLogScript
-        if (underUnix) {
-            gitLogScript = "git log --committer=\"realtek\" --committer=\"realsil\" --format=\"\" --name-only --no-merges HEAD | uniq"
-        }
-        else {
-            gitLogScript = "git log --committer=\"realtek\" --committer=\"realsil\" --format=\"\" --name-only --no-merges HEAD | sort /unique"
-        }
-        def gitLogOutput
-        print "Move to path: ${sourcePath}"
-        if (sourcePath == "") {
-            gitLogOutput = captureStdout(gitLogScript, underUnix)
-        }
-        else {
-            dir(sourcePath) {
-                gitLogOutput = captureStdout(gitLogScript, underUnix)
-            }
-        }
-        for (def i=0; i<gitLogOutput.size(); i++) {
-            tuPatterns << "file('${gitLogOutput[i]}')"
-        }
-        def tuPattern = tuPatterns.join("||")
-        extraAnalyzeArgs += " --tu-pattern \"${tuPattern}\""
     }
     return extraAnalyzeArgs
 }
@@ -283,8 +268,8 @@ def calTuPattern(coverityConfig, idx, underUnix) {
         def diffLines = captureStdout("${pythonExec} .pf-coverity/coverity.py -c PF_DIFF_PREV -s ${sourceDir}", underUnix)
         def tuPattern = diffLines.join("||")
         print ("PF_DIFF_PREV: ${tuPattern}")
-        def analyzeArgs = " --tu-pattern \"${tuPattern}\""
-        return analyzeArgs
+
+        return tuPattern
     }
     else {
         def patterns = coverityConfig.coverity_pattern_specified[idx].split(",")
@@ -297,8 +282,8 @@ def calTuPattern(coverityConfig, idx, underUnix) {
             patterns[i] = "file('" + patterns[i] + "')"
         }
         def tuPattern = patterns.join("||")
-        def analyzeArgs = " --tu-pattern \"${tuPattern}\""
-        return analyzeArgs
+
+        return tuPattern
     }
 }
 
@@ -416,7 +401,9 @@ def coverityScan(coverityConfig, buildIdx, idx) {
         }
         else {
             bat "if exist ${coverity_xml} del ${coverity_xml} /f"
-            bat 'md ' + coverity_build_dir
+            bat """
+                if not exist ${coverity_build_dir} md ${coverity_build_dir}
+            """
         }
         if (coverityConfig.coverity_comptype_platform[idx] && coverityConfig.coverity_comptype_platform[idx] != "") {
             def buildPlatforms = coverityConfig.coverity_comptype_platform[idx]
@@ -482,10 +469,13 @@ def coverityScan(coverityConfig, buildIdx, idx) {
         // prepare cov-build, cov-analyze options
         def extraBuildArgs = ""
         def extraAnalyzeArgs = extractAnalyzeArgs(coverityConfig, idx, underUnix)
-        if (coverityConfig.coverity_pattern_specified.size() > idx) {
-            extraAnalyzeArgs += calTuPattern(coverityConfig, idx, underUnix)
+        def tuPattern = ""
+        if (coverityConfig.coverity_pattern_specified.size() > idx && coverityConfig.coverity_pattern_specified[idx] != "") {
+        //if (coverityConfig.coverity_pattern_specified.size() > idx) {
+            tuPattern = "(" + calTuPattern(coverityConfig, idx, underUnix) + ")"
         }
-        else if (coverityConfig.coverity_pattern_excluded.size() > idx) {
+        if (coverityConfig.coverity_pattern_excluded.size() > idx && coverityConfig.coverity_pattern_excluded[idx] != "") {
+        //if (coverityConfig.coverity_pattern_excluded.size() > idx) {
             def patterns = coverityConfig.coverity_pattern_excluded[idx].split(",")
             // --tu-pattern "!file('.*/mydir/.*')"
             for (def i=0; i<patterns.size(); i++) {
@@ -495,8 +485,15 @@ def coverityScan(coverityConfig, buildIdx, idx) {
                 }
                 patterns[i] = "!file('" + patterns[i] + "')"
             }
-            def tuPattern = patterns.join("&&")
-            extraAnalyzeArgs += " --tu-pattern \"${tuPattern}\""
+            if (tuPattern == "") {
+                tuPattern = patterns.join("&&")
+            }
+            else {
+                tuPattern += "&&" + patterns.join("&&")
+            }
+        }
+        if (tuPattern != "") {
+            extraAnalyzeArgs += " -tp \"${tuPattern}\""
         }
         if (extraAnalyzeArgs.indexOf("--coding-standard-config") >= 0 || checkerText.indexOf("--coding-standard-config") >= 0) {
             extraBuildArgs = "--emit-complementary-info "
@@ -555,6 +552,9 @@ def coverityScan(coverityConfig, buildIdx, idx) {
             else {
                 bat coverity_command_prefix + "cov-build --dir $coverity_build_dir --config $coverity_xml $extraBuildArgs \"${dstFile}\""
             }
+        }
+        if (coverityConfig.coverity_analyze_rtkonly == true) {
+            coverityManageEmit(coverity_build_dir, buildIdx, coverity_command_prefix)
         }
     
         // cov-analyze
