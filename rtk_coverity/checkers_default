@@ -1,1 +1,11 @@
-
+{
+    "default": {
+        "options": "--security\n--enable-fnptr\n--enable-constraint-fpp\n-en\nCOM.ADDROF_LEAK\n-en\nCOM.BSTR.ALLOC\n-en\nCOM.BSTR.BAD_COMPARE\n-en\nCOM.BSTR.NE_NON_BSTR\n-en\nENUM_AS_BOOLEAN\n-en\nMIXED_ENUMS\n-en\nDC.STREAM_BUFFER\n-en\nDC.STRING_BUFFER\n--checker-option\nBUFFER_SIZE:report_fixed_size_dest:true"
+    },
+    "2022.3": {
+        "options": "--security\n--enable-fnptr\n--enable-constraint-fpp\n-en\nCOM.ADDROF_LEAK\n-en\nCOM.BSTR.ALLOC\n-en\nCOM.BSTR.BAD_COMPARE\n-en\nCOM.BSTR.NE_NON_BSTR\n-en\nENUM_AS_BOOLEAN\n-en\nMIXED_ENUMS\n-en\nDC.STREAM_BUFFER\n-en\nDC.STRING_BUFFER\n--checker-option\nBUFFER_SIZE:report_fixed_size_dest:true"
+    },
+    "2022.6": {
+        "options": "--security\n--enable-fnptr\n--enable-constraint-fpp\n-en\nCOM.ADDROF_LEAK\n-en\nCOM.BSTR.ALLOC\n-en\nCOM.BSTR.BAD_COMPARE\n-en\nCOM.BSTR.NE_NON_BSTR\n-en\nENUM_AS_BOOLEAN\n-en\nMIXED_ENUMS\n-en\nDC.STREAM_BUFFER\n-en\nDC.STRING_BUFFER\n--checker-option\nBUFFER_SIZE:report_fixed_size_dest:true"
+    }
+}

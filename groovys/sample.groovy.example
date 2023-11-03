@@ -1,0 +1,8 @@
+def func() {
+    echo "test groovy"
+    build job: 'another_job', parameters: [
+        string(name: 'param1', value: "value1")
+    ]
+}
+
+return this

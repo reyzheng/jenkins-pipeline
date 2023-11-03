@@ -24,7 +24,7 @@ def init(stageName) {
         }
         if (filesToStash.size() > 0) {
             config.settings.has_stashes = true
-            dir("scripts") {
+            dir (env.PF_PATH + 'scripts') {
                 stash name: "stash-script-${config.preloads.plainStageName}", includes: filesToStash.join(",")
             }
         }

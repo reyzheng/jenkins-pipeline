@@ -24,7 +24,7 @@ def init(stageName) {
     return config
 }
 
-def call(Map repoConfig = [:]) {
+def call(Map repoConfig = [:], plainStageName) {
     // TODO: duplicated def defaultConfig
     def defaultConfig = [
         scm_dst: "",
@@ -46,15 +46,18 @@ def call(Map repoConfig = [:]) {
     ]
     defaultConfig << repoConfig
 
-    def dst = defaultConfig.scm_dst
+    def dst = defaultConfig["scm_dst"]
     if (defaultConfig.scm_repo_mirror != "") {
         // scm_repo_mirror has higher priority
         dst = defaultConfig.scm_repo_mirror
     }
 
-    dir(dst) {
-        if (defaultConfig.preserve == false) {
-            deleteDir()
+    dir (dst) {
+        if (dst != "") {
+            if (defaultConfig["preserve"] == false || defaultConfig["preserve"] == "false") {
+                print "repo: clean source"
+                deleteDir()
+            }
         }
         if (defaultConfig.scm_credentials != "" || defaultConfig.scm_repo_mirror != "") {
             // Credentials, --mirror is invalid in Jenkins REPO plugin
@@ -62,7 +65,7 @@ def call(Map repoConfig = [:]) {
             dir (".repo-tool") {
                 deleteDir()
                 sh """
-                    git clone https://mirror.sdlc.rd.realtek.com/gerrit/repo -b stable .
+                    git clone https://mirror.rtkbf.com/gerrit/repo -b stable .
                 """
             }
             def repoCommand = ".repo-tool/repo"
@@ -121,7 +124,7 @@ def call(Map repoConfig = [:]) {
             }
         }
         else {
-            checkout([$class: 'RepoScm', 
+            checkout([$class: 'RepoScm',
                     forceSync: true, 
                     jobs: 4, 
                     manifestPlatform: defaultConfig.scm_repo_manifest_platforms,
@@ -135,6 +138,18 @@ def call(Map repoConfig = [:]) {
                     currentBranch: defaultConfig.scm_repo_manifest_currentbranchs,
                     depth: defaultConfig.scm_repo_manifest_depths])
         }
+    }
+    // sync GERRIT_REFSPEC if GERRIT_EVENT_TYPE == 'patchset-created'
+    def pythonExec = utils.getPython()
+    def pyCmd = "${pythonExec} .pf-all/pipeline_scripts/repo.py -c REPO_SYNC_REFSPEC -w .pf-${plainStageName}"
+    if (dst != "") {
+        pyCmd += " -d ${dst}"
+    }
+    if (isUnix()) {
+        sh pyCmd
+    }
+    else {
+        bat pyCmd
     }
 }
 

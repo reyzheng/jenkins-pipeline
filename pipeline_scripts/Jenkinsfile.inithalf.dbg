@@ -1,0 +1,23 @@
+def pf
+
+def pfInit() {
+    dir (".pf-all") {
+        deleteDir()
+        if (env.JOB_NAME.indexOf("/") >= 0) {
+            sh """
+                cp -a ../../../${JOB_NAME}/* .
+            """
+        }
+        else {
+            sh """
+                cp -a ../../${JOB_NAME}/* .
+            """
+        }
+        stash name: "pf-all", includes: "**"
+    }
+    unstash name: "pf-all"
+
+	def _pf = load("rtk_stages.groovy")
+	_pf.init()
+	return _pf
+}

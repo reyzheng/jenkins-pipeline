@@ -1,0 +1,27 @@
+def pf
+
+def pfInit() {
+	dir (".pf-config") {
+		checkout scm
+		stash name: "pf-config", includes: "**"
+	}
+	dir (".pf-framework") {
+		deleteDir()
+		if (isUnix() == true) {
+			sh "GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b stable-py ."
+		}
+		else {
+			bat "set GIT_SSL_NO_VERIFY=true && git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b stable-py ."
+		}
+		stash name: "pf-framework", includes: "**"
+	}
+    dir ("scripts") {
+        // ugly work around, while cleanWS diabled
+        deleteDir()
+    }
+	unstash name: "pf-config"
+	unstash name: "pf-framework"
+	def _pf = load("rtk_stages.groovy")
+	_pf.init()
+	return _pf
+}

@@ -7,8 +7,10 @@ def init(stageName) {
         enable: true,
         // "inline", "file", "source", "groovy"
         types: [],
+        failfast: false,
         contents: [],
         expressions: [],
+        toolbox: "",
 
         sshcredentials: ""
     ]
@@ -24,7 +26,7 @@ def init(stageName) {
         }
         if (filesToStash.size() > 0) {
             config.settings.has_stashes = true
-            dir("scripts") {
+            dir (env.PF_PATH + 'scripts') {
                 stash name: "stash-script-${config.preloads.plainStageName}", includes: filesToStash.join(",")
             }
         }
@@ -33,14 +35,28 @@ def init(stageName) {
     return config
 }
 
-def shellScript(underUnix, dstFile) {
-    if (underUnix == true) {
-        def statusCode = sh script: "bash", returnStatus: true
-        if (statusCode == 0) {
-            sh "bash -xe '${dstFile}'"
+def shellScript(underUnix, dstFile, toolbox) {
+    if (dstFile.endsWith(".py")) {
+        def pythonExec = utils.getPython()
+        if (underUnix == true) {
+            sh "${pythonExec} ${dstFile}"
         }
         else {
-            sh "sh -xe '${dstFile}'"
+            bat "${pythonExec} ${dstFile}"
+        }
+        return
+    }
+
+    if (underUnix == true) {
+        if (toolbox != "") {
+            toolbox = "singularity exec ${toolbox} "
+        }
+        def statusCode = sh script: "${toolbox}bash", returnStatus: true
+        if (statusCode == 0) {
+            sh "${toolbox}bash -xe '${dstFile}'"
+        }
+        else {
+            sh "${toolbox}sh -xe '${dstFile}'"
         }
     }
     else {
@@ -48,9 +64,12 @@ def shellScript(underUnix, dstFile) {
     }
 }
 
-def shellCommand(command, underUnix) {
+def shellCommand(command, underUnix, toolbox) {
     if (underUnix == true) {
-        sh command
+        if (toolbox != "") {
+            toolbox = "singularity exec ${toolbox} "
+        }
+        sh toolbox + command
     }
     else {
         bat command
@@ -83,7 +102,6 @@ def func(pipelineAsCode, configs, preloads) {
                 unstash "stash-script-${preloads.plainStageName}"
             }
         }
-
         for (def i=0; i<configs.types.size(); i++) {
             if (validScriptTypes.contains(configs.types[i]) == false) {
                 return
@@ -99,11 +117,11 @@ def func(pipelineAsCode, configs, preloads) {
 
             if (configs.types[i] == "inline") {
                 if (configs.sshcredentials == "") {
-                    shellCommand(configs.contents[i], underUnix)
+                    shellCommand(configs.contents[i], underUnix, configs["toolbox"])
                 }
                 else {
                     sshagent(credentials: [configs.sshcredentials]) {
-                        shellCommand(configs.contents[i], underUnix)
+                        shellCommand(configs.contents[i], underUnix, configs["toolbox"])
                     }
                 }
             }
@@ -163,11 +181,11 @@ def func(pipelineAsCode, configs, preloads) {
                 }
                 else if (configs.types[i] == "file") {
                     if (configs.sshcredentials == "") {
-                        shellScript(underUnix, dstFile)
+                        shellScript(underUnix, dstFile, configs["toolbox"])
                     }
                     else {
                         sshagent(credentials: [configs.sshcredentials]) {
-                            shellScript(underUnix, dstFile)
+                            shellScript(underUnix, dstFile, configs["toolbox"])
                         }
                     }
                 }
@@ -182,6 +200,9 @@ def func(pipelineAsCode, configs, preloads) {
         }
     }
     catch (e) {
+        if (configs["failfast"] == true) {
+            error(message: "${configs.stageName} " + e)
+        }
         unstable(message: "${preloads.stageName} is unstable " + e)
         if (env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS") {
             env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS" += "$reportStageName UNSTABLE;"

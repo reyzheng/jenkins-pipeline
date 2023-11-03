@@ -13,8 +13,8 @@ def init() {
     ]
 
     def config
-    def hasPostGroovy = fileExists "settings/post_config.groovy"
-    def hasPostJson = fileExists "settings/post_config.json"
+    def hasPostGroovy = fileExists env.PF_PATH + "settings/post_config.groovy"
+    def hasPostJson = fileExists env.PF_PATH + "settings/post_config.json"
     if (hasPostGroovy || hasPostJson) {
         config = utils.commonInit("post", defaultConfigs)
     }
@@ -31,16 +31,15 @@ def init() {
             config.settings.post_scripts_type[ite] == "action") {
         }
         else {
-            dir ('scripts') {
+            dir (env.PF_PATH + 'scripts') {
                 stash name: "pf-post-scripts-${ite}", includes: config.settings.post_scripts[ite]
             }
         }
     }
     // load email body
     if (config.settings.mail_body.trim() != "") {
-        dir ('scripts') {
+        dir (env.PF_PATH + 'scripts') {
             stash name: "pf-post-mail-body", includes: config.settings.mail_body
-            //config.preloads.mail_body = readFile(file: "scripts/" + )
         }
     }
 

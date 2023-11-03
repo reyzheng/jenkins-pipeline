@@ -1,0 +1,16 @@
+pipeline {
+    // don't use 'agent any'
+    // 'agent none' allows the job to continue on the same node with the same files
+    agent none
+    options {
+        skipDefaultCheckout true
+        timestamps ()
+    }
+    stages {
+		stage("PF-init") {
+			steps {
+				script {
+					pf = pfInit()
+				}
+			}
+		}

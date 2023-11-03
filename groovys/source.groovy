@@ -11,6 +11,7 @@ def init(stageName) {
         scm_credentials: [""],
         scm_refspecs: [""],
         scm_git_clone_depth: [0],
+        scm_git_submodules: [false],
         scm_git_recursivesubmodules: [false],
         scm_git_honor_refspec: [false],
         scm_repo_manifest_files: ["default.xml"],
@@ -22,10 +23,9 @@ def init(stageName) {
         scm_repo_reference: [""],
         scm_repo_mirror: [""],
 
-        scriptableParams: ["scm_dsts", "scm_branchs"]
+        scriptableParams: ["scm_dsts", "scm_branchs", "scm_repo_manifest_files"]
     ]
 
-    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     dir("groovys") {
         stash name: "stash-actions-git", includes: "git.groovy"
@@ -35,10 +35,6 @@ def init(stageName) {
         stash name: "git-checkout-parent", includes: "git-checkout-parent.sh"
         stash name: "git-label-submodules", includes: "git-label-submodules.sh"
     }
-
-    // stash scripted params' script file
-    utils.stashScriptedParamScripts(config.preloads.plainStageName, config.settings)
-
     if (env.PF_MAIN_SOURCE_NAME) {
         env.PF_MAIN_SOURCE_NAME += ",${stageName}"
         env.PF_MAIN_SOURCE_PLAINNAME += ",${config.preloads.plainStageName}"
@@ -47,10 +43,10 @@ def init(stageName) {
         env.PF_MAIN_SOURCE_NAME = stageName
         env.PF_MAIN_SOURCE_PLAINNAME = config.preloads.plainStageName
     }
+    utils.finalizeInit(stageName, config)
 
     return config
 }
-
 
 def scm_checkout(vars, i) {
     unstash name: "stash-script-utils"
@@ -93,12 +89,16 @@ def scm_checkout(vars, i) {
                 gitConfigs.credentials = env.PF_GERRIT_CREDENTIALS
             }
         }
+        env.PF_GERRIT_CREDENTIALS_MAIN = gitConfigs.credentials
         // later added vars
         if (vars.scm_refspecs[i]) {
             gitConfigs.refspecs = vars.scm_refspecs[i]
         }
-        if (vars.scm_git_recursivesubmodules[i]) {
-            gitConfigs.submodules = vars.scm_git_recursivesubmodules[i]
+        if (vars["scm_git_submodules"][i]) {
+            gitConfigs["submodules"] = vars["scm_git_submodules"][i]
+        }
+        if (vars["scm_git_recursivesubmodules"][i]) {
+            gitConfigs["recursivesubmodules"] = vars["scm_git_recursivesubmodules"][i]
         }
         if (vars.scm_git_clone_depth[i]) {
             gitConfigs.clone_depth = vars.scm_git_clone_depth[i]
@@ -142,10 +142,11 @@ def scm_checkout(vars, i) {
         if (env.PF_SOURCE_REVISION) {
             dir (".pf-source") {
                 def jsonGitInfo
-                try {
+                def hasGitInfo = fileExists '.pf-revision-info'
+                if (hasGitInfo == true) {
                     jsonGitInfo = readJSON file: '.pf-revision-info'
                 }
-                catch (e) {
+                else {
                     jsonGitInfo = [:]
                     jsonGitInfo.sources = []
                 }
@@ -185,6 +186,7 @@ def scm_checkout(vars, i) {
         def repoMirror = ""
         repoConfig.repo_path = repoPath
         repoConfig.scm_credentials = vars.scm_credentials[i]
+        env.PF_GERRIT_CREDENTIALS_MAIN = repoConfig.scm_credentials
         repoConfig.scm_repo_manifest_platforms = vars.scm_repo_manifest_platforms[i]
         repoConfig.scm_branchs = vars.scm_branchs[i]
         repoConfig.scm_repo_manifest_files = vars.scm_repo_manifest_files[i]
@@ -216,7 +218,7 @@ def scm_checkout(vars, i) {
         repoConfig.preserve = env.PF_PRESERVE_SOURCE
 
         def action = utils.loadAction("repo")
-        action.call(repoConfig)
+        action.call(repoConfig, vars["plainStageName"])
 
         // revision info for URF SBOM
         if (env.PF_SOURCE_REVISION) {
@@ -243,29 +245,33 @@ def scm_checkout(vars, i) {
     }
 }
 
-def func(pipelineAsCode, stageConfigsRaw, stagePreloads) {
-    unstash name: "stash-script-utils"
-    def utils = load "utils.groovy"
+def func(stageName) {
+    def stageConfigs = readJSON file: ".pf-all/settings/${stageName}_config.json"
+    def plainStageName = stageConfigs["plainStageName"]
 
     print "Running on " + env.NODE_NAME
-    if (stageConfigsRaw.enabled == false) {
+    if (stageConfigs["enabled"] == false) {
         return
     }
+
     dir (".pf-source") {
         print "source: clean .pf-source"
         deleteDir()
     }
-    def stageConfigs = [:]
-    utils.unstashScriptedParamScripts(stagePreloads.plainStageName, stageConfigsRaw, stageConfigs)
-    for (def i=0; i<stageConfigs.scm_counts; i++) {
+
+    utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "KNOWN_HOSTS", [])
+    // ${stageName}_config.json would be translated after KNOWN_HOSTS
+    // a temporal workaround, could remove after totally to py
+    stageConfigs = readJSON file: ".pf-all/settings/${stageName}_config.json"
+    for (def i=0; i<stageConfigs["scm_counts"]; i++) {
         // skip, if empty url
-        if (stageConfigs.scm_urls[i] == "") {
+        if (stageConfigs["scm_urls"][i] == "") {
             return 
         }
 
         env."PF_SOURCE_DST_${i}" = ""
-        if (stageConfigs.scm_dsts.size() > i) {
-            env."PF_SOURCE_DST_${i}" = stageConfigs.scm_dsts[i]
+        if (stageConfigs["scm_dsts"].size() > i) {
+            env."PF_SOURCE_DST_${i}" = stageConfigs["scm_dsts"][i]
         }
         scm_checkout(stageConfigs, i)
     }

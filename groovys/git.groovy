@@ -9,6 +9,7 @@ def init(stageName) {
         refspecs: "",
         clone_depth: 0,
         submodules: false,
+        recursivesubmodules: false,
 
         // hidden parameters
         preserve: false
@@ -22,6 +23,23 @@ def init(stageName) {
 
 //def func(pipelineAsCode, configs, preloads) {
 def func(stageName) {
+    // manual
+    /*
+    sshagent(credentials: ["linux-credential"]) {
+        def gitExisted = fileExists ".git"
+        if (gitExisted == false) {
+            sh """
+                git init
+                git remote remove origin
+                git remote add origin ssh://ed@cm2sd6.rtkbf.com:29418/kernel/common
+            """
+        }
+        sh """"
+            git pull origin master
+            git fetch origin $GERRIT_REFSPEC && git checkout FETCH_HEAD
+        """"
+    }
+    */
     dir ('.pf-source') {
         if (env.BUILD_BRANCH) {
             unstash name: "stash-${stageName}-config-${env.BUILD_BRANCH}"
@@ -38,18 +56,20 @@ def func(stageName) {
     }
 
     if (configs.enabled == true) {
-        dir (configs.dst) {
-            if (configs.preserve == false || configs.preserve == 'false') {
-                print "git: clean workspace"
-                deleteDir()
-            }
-            else {
-                print "git: preserve workspace"
-                if (isUnix()) {
-                    sh "pwd && ls -al"
+        dir (configs["dst"]) {
+            if (configs["dst"] != "") {
+                if (configs.preserve == false || configs.preserve == 'false') {
+                    print "git: clean source"
+                    deleteDir()
                 }
                 else {
-                    bat "dir"
+                    print "git: preserve source"
+                    if (isUnix()) {
+                        sh "pwd && ls -al"
+                    }
+                    else {
+                        bat "dir"
+                    }
                 }
             }
 
@@ -59,7 +79,7 @@ def func(stageName) {
             }
 
             // set "LocalBranch" for URF SBOM generation
-            if (configs.submodules == true) {
+            if (configs["submodules"] == true) {
                 checkout(scm: [$class: 'GitSCM', 
                     doGenerateSubmoduleConfigurations: false, 
                     extensions: [
@@ -68,7 +88,7 @@ def func(stageName) {
                         [$class: 'SubmoduleOption', 
                             disableSubmodules: false, 
                             parentCredentials: true, 
-                            recursiveSubmodules: true, 
+                            recursiveSubmodules: configs["recursivesubmodules"],
                             reference: '', 
                             trackingSubmodules: false],
                         [$class: 'CloneOption',
@@ -80,7 +100,7 @@ def func(stageName) {
                         refspec: "${configs.refspecs}",
                         credentialsId: "${configs.credentials}"]], 
                     branches: [[name: "${configs.branch}"]]
-                ])
+                ], poll: true)
             }
             else {
                 checkout(scm: [$class: 'GitSCM', 
@@ -98,21 +118,27 @@ def func(stageName) {
                         refspec: "${configs.refspecs}",
                         credentialsId: "${configs.credentials}"]], 
                     branches: [[name: "${configs.branch}"]]
-                ])
+                ], poll: true)
             }
+
+            if (configs["dst"] == "") {
+                // notice: git plugin will clean current folder, recover .pf-all
+                utils.unstashPipelineFramework()
+            }
+
             try {
-                // set upstream for URF SBOM generation
-                if (isUnix()) {
-                    sh """
-                        #git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
-                        git branch --set-upstream-to=origin/${configs.branch} ${localBranch}
-                    """
-                }
-                else {
-                    bat """
-                        #git branch --set-upstream-to=origin/${configs.branch} ${configs.branch}
-                        git branch --set-upstream-to=origin/${configs.branch} ${localBranch}
-                    """
+                if (env.PF_SOURCE_REVISION) {
+                    // set upstream for URF SBOM generation
+                    if (isUnix()) {
+                        sh """
+                            git branch --set-upstream-to=origin/${configs.branch} ${localBranch}
+                        """
+                    }
+                    else {
+                        bat """
+                            git branch --set-upstream-to=origin/${configs.branch} ${localBranch}
+                        """
+                    }
                 }
             }
             catch (e) {

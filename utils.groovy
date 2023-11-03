@@ -24,17 +24,20 @@ def parseUrl(url) {
 
 def stashScriptedParamScript(plainStageName, param, nonce) {
     if (isDynamicParameter(param) == true) {
-        dir ("scripts") {
+        dir (env.PF_PATH + 'scripts') {
             def tokens = param.split()
             stash name: "stash-${plainStageName}-params-${nonce}", includes: tokens[1]
             print "${plainStageName}: stash scripted param ${nonce}, ${tokens[1]}"
+            return "stash-${plainStageName}-params-${nonce}"
         }
     }
 }
 
-def stashScriptedParamScripts(plainStageName, stageConfigs) {
-    def scriptableParams = stageConfigs.scriptableParams
+def stashScriptedParamScripts(stageConfigs) {
+    def scriptableParams = stageConfigs["scriptableParams"]
+    def plainStageName = stageConfigs["plainStageName"]
 
+    stageConfigs["stashes"] = []
     for (def key in stageConfigs.keySet()) {
         if (scriptableParams.contains(key)) {
             //print "13 test ${key} scripted, class" + stageConfigs[key].getClass()
@@ -42,13 +45,19 @@ def stashScriptedParamScripts(plainStageName, stageConfigs) {
             if (stageConfigs[key] instanceof java.lang.String) {
                 //print "String type"
                 // like repo_path: "repo"
-                stashScriptedParamScript(plainStageName, stageConfigs[key], key)
+                def stashed = stashScriptedParamScript(plainStageName, stageConfigs[key], key)
+                if (stashed) {
+                    stageConfigs["stashes"] << stashed
+                }
             }
             else if (stageConfigs[key] instanceof net.sf.json.JSONArray || stageConfigs[key] instanceof java.util.ArrayList) {
                 //print "Array type"
                 // like scm_branchs: ["master"]
                 for (def i=0; i<stageConfigs[key].size(); i++) {
-                    stashScriptedParamScript(plainStageName, stageConfigs[key][i], "${key}-${i}")
+                    def stashed = stashScriptedParamScript(plainStageName, stageConfigs[key][i], "${key}-${i}")
+                    if (stashed) {
+                        stageConfigs["stashes"] << stashed
+                    }
                 }
             }
             else if (stageConfigs[key] instanceof java.util.LinkedHashMap) {
@@ -56,7 +65,10 @@ def stashScriptedParamScripts(plainStageName, stageConfigs) {
                 // like parallel_parameters: { "os": ["linux", "windows", "macos"] },
                 for (def paramKey in stageConfigs[key].keySet()) {
                     for (def i=0; i<stageConfigs[key][paramKey].size(); i++) {
-                        stashScriptedParamScript(plainStageName, stageConfigs[key][paramKey][i], "${key}-${paramKey}-${i}")
+                        def stashed = stashScriptedParamScript(plainStageName, stageConfigs[key][paramKey][i], "${key}-${paramKey}-${i}")
+                        if (stashed) {
+                            stageConfigs["stashes"] << stashed
+                        }
                     }
                 }
             }
@@ -83,6 +95,44 @@ def extractScriptedParameter(param, stashName) {
     }
 
     return extractedParam
+}
+
+def unstashParameterScripts(stageConfigs) {
+    if (stageConfigs.containsKey("stashes") == true) {
+        for (def i=0; i<stageConfigs["stashes"].size(); i++) {
+            dir ('.pf-parameters') {
+                unstash name: stageConfigs["stashes"][i]
+            }
+        }
+    }
+}
+
+def unstashPipelineFramework() {
+    print "Unstash PF under "
+    if (isUnix()) {
+        sh "pwd"
+    }
+    else {
+        bat "dir"
+    }
+    // unstash to PF_ROOT
+    env.PF_ROOT = ".pf-all"
+    print "env.PF_ROOT ${env.PF_ROOT}"
+    dir (env.PF_ROOT) {
+        deleteDir()
+        unstash name: 'stash-pf-main'
+        unstash name: 'stash-pf-settings'
+        unstash name: 'stash-pf-user-scripts'
+        unstash name: 'stash-pf-scripts'
+        unstash name: 'stash-pf-coverity'
+    }
+}
+
+def getStageConfig(plainStageName) {
+    dir (".pf-${plainStageName}") {
+        def config = readJSON file: 'stageConfig.json'
+        return config
+    }
 }
 
 def unstashScriptedParamScripts(plainStageName, stageConfigs, stageConfigsRet) {
@@ -259,12 +309,18 @@ def extractActionName(stageName) {
     return actionName
 }
 
+def finalizeInit(stageName, defaultConfigs) {
+    // env.PF_PATH should have / suffix
+    writeJSON file: "${env.PF_PATH}settings/${stageName}_config.json", json: defaultConfigs["settings"]
+    print "PF: writeback ${env.PF_PATH}settings/${stageName}_config.json"
+}
+
 def commonInit(stageName, defaultConfigs) {
     def userScripts
 
-    def hasJsonConfig = fileExists "settings/${stageName}_config.json"
+    def hasJsonConfig = fileExists env.PF_PATH + "settings/${stageName}_config.json"
     if (hasJsonConfig == true) {
-        userScripts = readJSON file: "settings/${stageName}_config.json"
+        userScripts = readJSON file: env.PF_PATH + "settings/${stageName}_config.json"
         // retrieve config from userScripts
         for (def key in defaultConfigs.keySet()) {
             if (userScripts."${key}" != null) {
@@ -277,7 +333,7 @@ def commonInit(stageName, defaultConfigs) {
     }
     else {
         try {
-            userScripts = load "settings/${stageName}_config.groovy"
+            userScripts = load env.PF_PATH + "settings/${stageName}_config.groovy"
             // retrieve config from userScripts
             for (def key in defaultConfigs.keySet()) {
                 try {
@@ -295,9 +351,10 @@ def commonInit(stageName, defaultConfigs) {
     }
 
     def config = [:]
-    config.settings = defaultConfigs
-    config.settings.stageName = stageName
-    config.settings.plainStageName = stageName.replaceAll("@", "at")
+    config['settings'] = defaultConfigs
+    config['settings']['stageName'] = stageName
+    config['settings']['plainStageName'] = stageName.replaceAll("@", "at")
+    config['settings']['actionName'] = extractActionName(stageName)
     config.preloads = [:]
     config.preloads.stageName = stageName
     config.preloads.plainStageName = stageName.replaceAll("@", "at")
@@ -306,126 +363,49 @@ def commonInit(stageName, defaultConfigs) {
     return config
 }
 
-def staticInit(stageName, defaultConfigs) {
-    // check json config existence or create it
-    dir ("settings") {
-        def hasJsonConfig = fileExists "${stageName}_config.json"
-        if (hasJsonConfig == true) {
-            userScripts = readJSON file: "${stageName}_config.json"
-            // retrieve config from userScripts
-            for (def key in defaultConfigs.keySet()) {
-                if (userScripts."${key}" != null) {
-                    defaultConfigs."${key}" = userScripts."${key}"
-                }
-            }
-            if (stageName == 'post') {
-                print "userScripts " + userScripts
-            }
+def decorateCommand(command) {
+    if (env.PF_BUILD_ENV) {
+        def delimiter = env.PF_BUILD_ENV.indexOf(":")
+        def buildEnv = env.PF_BUILD_ENV.substring(0, delimiter)
+        def buildImage = env.PF_BUILD_ENV.substring(delimiter + 1)
+        print("buildEnv ${buildEnv}")
+        print("buildImage ${buildImage}")
+        if (buildEnv == "docker") {
+            // --user \$(id -u):\$(id -g) would cause non-existed user error
+            command = "docker run --rm --env-file <(env) -v ${WORKSPACE}:${WORKSPACE} -w ${WORKSPACE} ${buildImage} ${command}"
         }
-        else {
-            try {
-                userScripts = load "${stageName}_config.groovy"
-                for (def key in defaultConfigs.keySet()) {
-                    try {
-                        defaultConfigs."${key}" = userScripts."${key}"
-                    }
-                    catch (e) {
-                        // not defined in userScripts
-                    }
-                }
+        else if (buildEnv == "singularity") {
+            def buildImages = buildImage.split(",")
+            def overlay = ""
+            if (buildImages.size() > 1) {
+                overlay = "--overlay ${buildImages[1]}"
             }
-            catch (e) {
-                print "$stageName not configured " + e
-            }
+            command = "singularity exec ${overlay} -B ${WORKSPACE}:${WORKSPACE} -H ${WORKSPACE} ${buildImages[0]} ${command}"
         }
-        defaultConfigs.stageName = stageName
-        defaultConfigs.plainStageName = stageName.replaceAll("@", "at")
-        defaultConfigs.actionName = extractActionName(stageName)
-        if (defaultConfigs.actionName == "composition") {
-            defaultConfigs.parallel_parameters = extractParallelParameters(defaultConfigs.parallel_parameters)
-            defaultConfigs.parallel_excludes = extractParameters(defaultConfigs.parallel_excludes)
-        }
-        else if (defaultConfigs.actionName == "source") {
-            if (env.PF_MAIN_SOURCE_STAGE) {
-                env.PF_MAIN_SOURCE_STAGE += ",${defaultConfigs.stageName}"
-            }
-            else {
-                env.PF_MAIN_SOURCE_STAGE = defaultConfigs.stageName
-            }
-            // copy to arr to avoid 'Scripts not permitted to use method net.sf.json.JSONArray join java.lang.String'
-            def arr = []
-            for (def i=0; i<defaultConfigs.scm_dsts.size(); i++) {
-                arr << defaultConfigs.scm_dsts[i]
-            }
-            env.PF_MAIN_SOURCE_DSTS = arr.join(',')
-        }
-        else if (defaultConfigs.actionName == "coverity") {
-            if (defaultConfigs.coverity_stream instanceof java.lang.String) {
-                // TODO: tell user deprecated
-                convertToList(defaultConfigs)
-            }
-        }
-        writeJSON file: "stage-config.json", json: defaultConfigs
-        stash name: "stage-configs-${defaultConfigs.plainStageName}", includes: "stage-config.json"
     }
-    if (defaultConfigs.scriptableParams) {
-        // stash scripted params' script file
-        stashScriptedParamScripts(defaultConfigs.plainStageName, defaultConfigs)
-    }
-    return defaultConfigs
-}
 
-/*
-def unstashScriptedParams(stageConfigs) {
-    if (stageConfigs.scriptableParams) {
-        def scriptableParams = stageConfigs.scriptableParams
-        // TODO: refactor
-        def plainStageName = stageConfigs.plainStageName
-        for (def key in stageConfigs.keySet()) {
-            if (scriptableParams.contains(key)) {
-                // scripted params may be.
-                if (stageConfigs[key] instanceof net.sf.json.JSONArray || stageConfigs[key] instanceof java.util.ArrayList) {
-                    // like scm_branchs: ["master"]
-                    for (def i=0; i<stageConfigs[key].size(); i++) {
-                        stageConfigs[key][i] = extractScriptedParameter(stageConfigs[key][i], "stash-${plainStageName}-params-${key}-${i}")
-                    }
-                }
-                else if (stageConfigs[key] instanceof java.util.LinkedHashMap) {
-                    // like parallel_parameters: { "os": ["linux", "windows", "macos"] },
-                    for (def paramKey in stageConfigs[key].keySet()) {
-                        for (def i=0; i<stageConfigs[key][paramKey].size(); i++) {
-                            stageConfigs[key][paramKey][i] = extractScriptedParameter(stageConfigs[key][paramKey][i], "stash-${plainStageName}-params-${key}-${paramKey}-${i}")
-                        }
-                    }
-                }
-                else {
-                    // scalar variables: like string, boolean
-                    // ex. repo_path: "repo"
-                    stageConfigs[key] = extractScriptedParameter(stageConfigs[key], "stash-${plainStageName}-params-${key}")
-                }
-            }
-        }
-    }
+    return command
 }
-*/
 
 def getPython() {
+    def testPython = decorateCommand("python --version")
+    def testPython3 = decorateCommand("python3 --version")
 	if (isUnix()) {
-		def statusPython = sh script: "python --version", returnStatus: true
-		def statusPython3 = sh script: "python3 --version", returnStatus: true
-		if (statusPython == 0) {
-			return 'python'
-		}
-		else if (statusPython3 == 0) {
+		def statusPython = sh script: testPython, returnStatus: true
+		def statusPython3 = sh script: testPython3, returnStatus: true
+		if (statusPython3 == 0) {
 			return 'python3'
 		}
+		else if (statusPython == 0) {
+			return 'python'
+		}
 		else {
-			error("Please install python")
+            error("Please install python or switch to stable-pyless branch")
 		}
 	}
 	else {
-		def statusPython = bat script: "python --version", returnStatus: true
-		def statusPython3 = bat script: "python3 --version", returnStatus: true
+		def statusPython = bat script: testPython, returnStatus: true
+		def statusPython3 = bat script: testPython3, returnStatus: true
 		if (statusPython == 0) {
 			return 'python'
 		}
@@ -433,27 +413,48 @@ def getPython() {
 			return 'python3'
 		}
 		else {
-			error("Please install python")
+            error("Please install python or switch to stable-pyless branch")
 		}
 	}
 }
 
-def pyExec(actionName, stageName) {
+def pyExec(actionName, stageName, command, args) {
     def plainStageName = stageName.replaceAll("@", "at")
 
-	unstash name: "stash-python-${plainStageName}"
-    dir (".pf-configs") {
-        unstash name: "stage-configs-${plainStageName}"
-        //stageConfigs = readJSON file: "stage-config.json"
+    def pythonExec = getPython()
+    def pyCmd = decorateCommand("${pythonExec} ${env.PF_ROOT}/pipeline_scripts/${actionName}.py -f ${env.PF_ROOT}/settings/${stageName}_config.json -w .pf-${plainStageName}")
+    if (command != "") {
+        pyCmd = "${pyCmd} -c ${command}"
     }
-	
-	def python = utils.getPython()
-	if (isUnix()) {
-        sh "${python} ${actionName}.py -c .pf-configs/stage-config.json"
-	}
-	else {
-        bat "${python} ${actionName}.py -c .pf-configs\\stage-config.json"		
-	}
+    for (def i=0; i<args.size(); ) {
+        pyCmd = "${pyCmd} ${args[i]} ${args[i + 1]}"
+        i += 2
+    }
+    if (isUnix()) {
+        sh pyCmd
+    }
+    else {
+        bat pyCmd
+    }
+}
+
+def exportEnv() {
+    def gitExists = fileExists 'env'
+    if (gitExists == true) {
+        def fp = readFile 'env'
+        def lines = fp.readLines()
+        for (def line in lines) {
+            def tokens = line.split("=")
+            if (tokens.size() > 1) {
+                env."${tokens[0]}" = tokens[1]
+                print("exportEnv ${tokens[0]} ${tokens[1]}")
+            }
+            else {
+                env."${tokens[0]}" = ""
+                print("exportEnv ${tokens[0]} ''")
+            }
+        }
+    }
 }
 
 def loadAction(actionName) {
@@ -471,6 +472,28 @@ def loadAction(actionName) {
     }
 
     return action
+}
+
+def queryURFCICDStatus(account, token, smsId) {
+    def ret = -1
+    def postParam = "Account=${account}&Token=${token}&Id=${smsId}"
+    def cmd = "curl -d \"${postParam}\" -o .pf-queryurf.json https://sms.realtek.com/RestApi/ReleaseStatus"
+    try {
+        if (isUnix()) {
+            sh cmd
+        }
+        else {
+            bat cmd
+        }
+        def jsonObject = readJSON file: '.pf-queryurf.json'
+        ret = jsonObject.CICDStatus.toInteger()
+    }
+    catch (e) {
+        print e
+    }
+
+    print "Query SMS CICDStatus: ${ret}"
+    return ret
 }
 
 return this

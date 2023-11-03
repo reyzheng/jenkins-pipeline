@@ -1,0 +1,12 @@
+{
+    "default": {
+        "options": "--security\n--enable-fnptr\n--enable-constraint-fpp\n--concurrency\n-en\nMISSING_COPY_OR_ASSIGN\n-en\nAUDIT.SPECULATIVE_EXECUTION_DATA_LEAK\n-en\nCOM.ADDROF_LEAK\n-en\nCOM.BSTR.ALLOC\n-en\nCOM.BSTR.BAD_COMPARE\n-en\nCOM.BSTR.NE_NON_BSTR\n-en\nENUM_AS_BOOLEAN\n-en\nFLOATING_POINT_EQUALITY\n-en\nHARDCODED_CREDENTIALS\n-en\nINTEGER_OVERFLOW\n-en\nMIXED_ENUMS\n-en\nREVERSE_OVERRUN\n-en\nRISKY_CRYPTO\n-en\nSTACK_USE\n-en\nUNENCRYPTED_SENSITIVE_DATA\n-en\nVCALL_IN_CTOR_DTOR\n-en\nWEAK_GUARD\n-en\nWEAK_PASSWORD_HASH\n-en\nWRITE_CONST_FIELD\n-en\nY2K38_SAFETY\n-en\nDC.STREAM_BUFFER\n-en\nDC.STRING_BUFFER\n--checker-option\nBUFFER_SIZE:report_fixed_size_dest:true\n--checker-option\nRESOURCE_LEAK:allow_address_taken:true\n--aggressiveness-level\nmedium"
+    },
+    "2022.3": {
+        "options": "--security\n--enable-fnptr\n--enable-constraint-fpp\n--concurrency\n-en\nMISSING_COPY_OR_ASSIGN\n-en\nAUDIT.SPECULATIVE_EXECUTION_DATA_LEAK\n-en\nCOM.ADDROF_LEAK\n-en\nCOM.BSTR.ALLOC\n-en\nCOM.BSTR.BAD_COMPARE\n-en\nCOM.BSTR.NE_NON_BSTR\n-en\nENUM_AS_BOOLEAN\n-en\nFLOATING_POINT_EQUALITY\n-en\nHARDCODED_CREDENTIALS\n-en\nINTEGER_OVERFLOW\n-en\nMIXED_ENUMS\n-en\nREVERSE_OVERRUN\n-en\nRISKY_CRYPTO\n-en\nSTACK_USE\n-en\nUNENCRYPTED_SENSITIVE_DATA\n-en\nVCALL_IN_CTOR_DTOR\n-en\nWEAK_GUARD\n-en\nWEAK_PASSWORD_HASH\n-en\nDC.STREAM_BUFFER\n-en\nDC.STRING_BUFFER\n--checker-option\nBUFFER_SIZE:report_fixed_size_dest:true\n--checker-option\nRESOURCE_LEAK:allow_address_taken:true\n--aggressiveness-level\nmedium"
+    },
+    "2022.6": {
+        "options": "--security\n--enable-fnptr\n--enable-constraint-fpp\n--concurrency\n-en\nMISSING_COPY_OR_ASSIGN\n-en\nAUDIT.SPECULATIVE_EXECUTION_DATA_LEAK\n-en\nCOM.ADDROF_LEAK\n-en\nCOM.BSTR.ALLOC\n-en\nCOM.BSTR.BAD_COMPARE\n-en\nCOM.BSTR.NE_NON_BSTR\n-en\nENUM_AS_BOOLEAN\n-en\nEXPOSED_NON_CONST_STATIC\n-en\nFLOATING_POINT_EQUALITY\n-en\nHARDCODED_CREDENTIALS\n-en\nINTEGER_OVERFLOW\n-en\nMIXED_ENUMS\n-en\nREVERSE_OVERRUN\n-en\nRISKY_CRYPTO\n-en\nUNENCRYPTED_SENSITIVE_DATA\n-en\nUNLOCKED_ACCESS\n-en\nVCALL_IN_CTOR_DTOR\n-en\nWEAK_GUARD\n-en\nWEAK_PASSWORD_HASH\n-en\nDC.STREAM_BUFFER\n-en\nDC.STRING_BUFFER\n--checker-option\nBUFFER_SIZE:report_fixed_size_dest:true\n--checker-option\nRESOURCE_LEAK:allow_address_taken:true\n--aggressiveness-level\nmedium"
+    }
+}
+
