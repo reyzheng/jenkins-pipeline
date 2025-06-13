@@ -5,6 +5,7 @@ def init(stageName) {
         coverity_report_toolbox: "",
         coverity_report_toolpath: "",
         coverity_report_config: "",
+        coverity_report_latest_snapshot: false,
         coverity_report_projects: [],
         coverity_report_key_credential: "",
         coverity_report_dst: "cov/report",
@@ -14,8 +15,8 @@ def init(stageName) {
     ]
 
     def mapConfig = utils.commonInit(stageName, defaultConfigs)
-    if (mapConfig["settings"]["coverity_report_key_credential"] == "") {
-        mapConfig["settings"]["coverity_report_key_credential"] = env.PF_COV_CREDENTIALS
+    if (mapConfig["coverity_report_key_credential"] == "") {
+        mapConfig["coverity_report_key_credential"] = env.PF_COV_CREDENTIALS
     }
     utils.finalizeInit(stageName, mapConfig)
 
@@ -38,19 +39,9 @@ def postProcessCoverityReport(workDir, dst) {
 
 def func(stageName) {
     def plainStageName = stageName.replaceAll("@", "at")
-    def pythonExec = utils.getPython()
-
-    // TODO: postProcessCoverityReport
-    def pyCmd = "${pythonExec} ${env.PF_ROOT}/pipeline_scripts/covreport.py -f ${env.PF_ROOT}/settings/${stageName}_config.json -w .pf-${plainStageName} -j $WORKSPACE"
-
     def stageConfig = readJSON file: ".pf-all/settings/${stageName}_config.json"
     withCredentials([file(credentialsId: stageConfig["coverity_report_key_credential"], variable: 'COV_AUTH_KEY')]) {
-        if (isUnix()) {
-            sh pyCmd
-        }
-        else {
-            bat pyCmd
-        }
+        utils.pyExec("covreport", stageConfig["stageName"], "", ["-j", WORKSPACE])
     }
 
     postProcessCoverityReport(".pf-${plainStageName}", stageConfig["coverity_report_dst"])

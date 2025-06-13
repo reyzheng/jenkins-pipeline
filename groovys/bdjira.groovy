@@ -32,32 +32,27 @@ def func(stageName) {
 
 
     args = ['-j', WORKSPACE]
-    if (stageConfig["operation"] == "PUBLISH_ISSUES") {
-        def tokenCredentials = false
-        try {
-            withCredentials([usernamePassword(credentialsId: stageConfig["jira_credentials"], usernameVariable: 'JIRA_USER', passwordVariable: 'JIRA_PASSWORD')]) {
-                print "Username/password jira credentials"
-            }
-        }
-        catch (e) {
-            print "Token jira credentials"
-            tokenCredentials = true
-        }
-
-        if (tokenCredentials == true) {
-            withCredentials([string(credentialsId: stageConfig["jira_credentials"], variable: 'JIRA_TOKEN')]) {
+    if (stageConfig["operation"].startsWith("PUBLISH_ISSUES")) {
+        print "publish"
+        // PUBLISH_ISSUES: copy and publish
+        // PUBLISH_ISSUES_ONLY: publish
+        if (stageConfig["operation"] == "PUBLISH_ISSUES") {
+            withCredentials([sshUserPrivateKey(credentialsId: "devops-gerrit", keyFileVariable: 'DECRYPT_KEY')]) {
                 utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], "COPY_REMOTE_ARTIFACTS", args)
-                utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], stageConfig["operation"], args)
+                dir (".pf-${plainStageName}") {
+                    utils.exportEnv()
+                }
             }
+            utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], "PUBLISH_ISSUES", args)
         }
         else {
-            withCredentials([usernamePassword(credentialsId: stageConfig["jira_credentials"], usernameVariable: 'JIRA_USER', passwordVariable: 'JIRA_PASSWORD')]) {
-                utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], "COPY_REMOTE_ARTIFACTS", args)
-                utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], stageConfig["operation"], args)
+            withCredentials([string(credentialsId: stageConfig["jira_credentials"], variable: 'JIRA_TOKEN')]) {
+                utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], "PUBLISH_ISSUES", args)
             }
         }
     }
     else if (stageConfig["operation"] == "CREATE_ISSUES") {
+        print "create"
         withCredentials([string(credentialsId: stageConfig["blackduck_token"], variable: 'BD_TOKEN')]) {
             utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], stageConfig["operation"], args)
         }

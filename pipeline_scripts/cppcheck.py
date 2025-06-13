@@ -83,8 +83,6 @@ def main(argv):
     logging.basicConfig(filename=os.path.join(WORK_DIR, 'cppcheck.log'), level=logging.DEBUG, filemode='w')
     # step 1
     #     Load configurations
-    #     Get coverity project name if necessary
-    #     Generate .coverity.license.config
     loadConfigs(configFile)
     utils.checkLicense(os.path.dirname(sys.argv[0]), configs, 'cppcheck')
     cppcheck()

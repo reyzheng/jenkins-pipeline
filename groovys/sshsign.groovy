@@ -1,58 +1,39 @@
 def init(stageName) {
-    def utils = load "utils.groovy"
-    def actionName = utils.extractActionName(stageName)
-
     def defaultConfigs = [
         display_name: "",
         enable: true,
+        enablement_expression: "1",
         sshsign_credential: "",
+        system_account: false,
+        sign_user: "",
         sshsign_authcode: "",
-        sshsign_sha: "",
-        sshsign_hex: ""
+        sshsign_sha: [],
+        sshsign_hash_algo: [],
+        sshsign_padding_algo: [],
+        sshsign_hex: []
     ]
     def config = utils.commonInit(stageName, defaultConfigs)
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(pipelineAsCode, config, preloads) {
-    def dstFile = "sshsigned"
-    def buildBranch = null
-    if (env.BUILD_BRANCH) {
-        dstFile = dstFile + "-" + env.BUILD_BRANCH
-    }
+def func(stageName) {
+    def config = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
 
-    if (config.enable == false) {
-        print "Skip stage ${preloads.stageName}"
-        return
-    }
-
-    withCredentials([string(credentialsId: config.sshsign_authcode, variable: 'AUTH_CODE')]) {
-        for (def ite=0; ite<config.sshsign_sha.size(); ite++) {
-            dstFile = dstFile + "-${ite}"
-            def hexData = readFile file: config.sshsign_hex[ite]
-            def body
-            dir(".sshsign") {
-                def hsmPureSignParameter = [:]
-                hsmPureSignParameter.keyName = config.sshsign_sha[ite]
-                hsmPureSignParameter.hexData = hexData.trim()
-                hsmPureSignParameter.authCode = AUTH_CODE
-                writeJSON file: "body.json", json: hsmPureSignParameter
-                body = readFile "body.json"
-                deleteDir()
-            }
-            def response = httpRequest httpMode: 'POST',
-                            contentType: 'APPLICATION_JSON',
-                            authentication: config.sshsign_credential, 
-                            requestBody: body,
-                            url: 'https://certsign.realtek.com/api/SignAPI/HSMPureSign', 
-                            ignoreSslErrors: true
-            if (response.status == 200) {
-                def responseObject = readJSON text: response.content
-                writeFile file: dstFile, text: responseObject.data.signature
-                archiveArtifacts artifacts: dstFile
-            }
+    if (config["enablement_expression"]) {
+        print "Check ${config['enablement_expression']}"
+        def expr = evaluate(config["enablement_expression"])
+        if (expr == false) {
+            print "Skip ${stageName}"
+            return
         }
+    }
+
+    withCredentials([string(credentialsId: config["sshsign_authcode"], variable: 'AUTH_CODE'),
+                        usernamePassword(credentialsId: config["sshsign_credential"], usernameVariable: 'AD_USER', passwordVariable: 'AD_PASSWORD')]) {
+        utils.pyExec(config["actionName"], config["stageName"], "PURE_SIGN", [])
+        utils.archiveStageArtifacts(config["stageName"])
     }
 }
 

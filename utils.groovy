@@ -1,170 +1,152 @@
-def parseUrl(url) {
-    def ret = []
+import groovy.transform.Field
 
-    // separate url and path, ssh://psp.sdlc.rd.realtek.com:29418/test/test ->
-    // ret[0] ssh://psp.sdlc.rd.realtek.com:29418
-    // ret[1] test/test
-    def tokens = url.split("//")
-    if (tokens.size() == 1) {
-        // git@github.com:reyzheng/test.git
-        tokens = url.split(":")
-        ret << tokens[0]
-        ret << tokens[1]
+def updateStageConfig(configs) {
+    def stageName = configs["stageName"]
+    writeJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json", json: configs, pretty: 2
+}
+
+// A: preview-report-committer.json: all defects () in the stream
+// B: cvssreport.json: all defects (with related cvss info.) in the project
+// C: existed issue (in specified project)
+// in A, and not triaged as Ignore:      create new
+// in A, and triaged as Ignore:          create new, and close
+// in C, not in B:                       close (existed)
+// note:                                 component policy, in A, and triaged as Ignore, only the Jira issue match exact component will be closed
+//                                          author policy, in A, and triaged as Ignore, only one Jira issue so only one will be closed
+def copyDefectsArtifacts(upstreamJobName, upstreamBuildNumber, buildBranch) {
+    def reportFile
+    if (buildBranch == null) {
+        reportFile = "preview-report-committer.json"
     }
     else {
-        def protocol = tokens[0] // https: or ssh:
-        def addr = tokens[1].substring(0, tokens[1].indexOf('/')) // psp.sdlc.rd.realtek.com:29418
-        def path = tokens[1].substring(tokens[1].indexOf('/') + 1 , tokens[1].length()) // test/test
-        ret << "${protocol}//${addr}"
-        ret << path
+        reportFile = "preview-report-committer-${buildBranch}.json"
     }
-
-    return ret
-}
-
-def stashScriptedParamScript(plainStageName, param, nonce) {
-    if (isDynamicParameter(param) == true) {
-        dir (env.PF_PATH + 'scripts') {
-            def tokens = param.split()
-            stash name: "stash-${plainStageName}-params-${nonce}", includes: tokens[1]
-            print "${plainStageName}: stash scripted param ${nonce}, ${tokens[1]}"
-            return "stash-${plainStageName}-params-${nonce}"
-        }
+    print "projectName: " + upstreamJobName
+    print "buildNumber: " + upstreamBuildNumber
+    def reportExisted = fileExists reportFile
+    if (buildBranch == null && reportExisted == true) {
+        print "copyDefectsArtifacts: ${reportFile} existed already"
+        return true
     }
-}
-
-def stashScriptedParamScripts(stageConfigs) {
-    def scriptableParams = stageConfigs["scriptableParams"]
-    def plainStageName = stageConfigs["plainStageName"]
-
-    stageConfigs["stashes"] = []
-    for (def key in stageConfigs.keySet()) {
-        if (scriptableParams.contains(key)) {
-            //print "13 test ${key} scripted, class" + stageConfigs[key].getClass()
-            // scripted params may be.
-            if (stageConfigs[key] instanceof java.lang.String) {
-                //print "String type"
-                // like repo_path: "repo"
-                def stashed = stashScriptedParamScript(plainStageName, stageConfigs[key], key)
-                if (stashed) {
-                    stageConfigs["stashes"] << stashed
-                }
-            }
-            else if (stageConfigs[key] instanceof net.sf.json.JSONArray || stageConfigs[key] instanceof java.util.ArrayList) {
-                //print "Array type"
-                // like scm_branchs: ["master"]
-                for (def i=0; i<stageConfigs[key].size(); i++) {
-                    def stashed = stashScriptedParamScript(plainStageName, stageConfigs[key][i], "${key}-${i}")
-                    if (stashed) {
-                        stageConfigs["stashes"] << stashed
-                    }
-                }
-            }
-            else if (stageConfigs[key] instanceof java.util.LinkedHashMap) {
-                //print "Map type"
-                // like parallel_parameters: { "os": ["linux", "windows", "macos"] },
-                for (def paramKey in stageConfigs[key].keySet()) {
-                    for (def i=0; i<stageConfigs[key][paramKey].size(); i++) {
-                        def stashed = stashScriptedParamScript(plainStageName, stageConfigs[key][paramKey][i], "${key}-${paramKey}-${i}")
-                        if (stashed) {
-                            stageConfigs["stashes"] << stashed
-                        }
-                    }
-                }
+    // Force copy for parallel builds
+    try {
+        step([$class: 'CopyArtifact', 
+                filter: reportFile, 
+                flatten: false, 
+                projectName: upstreamJobName, 
+                selector: [$class: 'SpecificBuildSelector', buildNumber: "${upstreamBuildNumber}"]])
+    }
+    catch (e) {
+        if (buildBranch == null) {
+            // for standalone build, check artifcats at WORKSPACE
+            if (fileExists(reportFile) == true) {
+                print "Take preview-report-committer.json under WORKSPACE"
+                return true
             }
         }
+        unstable("JIRA action: copy artifacts ${reportFile} failed " + e)
+        return false
     }
+
+    return true
 }
 
-def extractScriptedParameter(param, stashName) {
-    def extractedParam = ""
+def pfParallelInfo(copyPreviewReport) {
+    def upstreamJobName = env.JOB_NAME
+    def upstreamBuildNumber = env.BUILD_NUMBER
+    if (env.UPSTREAM_JOB_NAME) {
+        upstreamJobName = env.UPSTREAM_JOB_NAME
+    }
+    if (env.UPSTREAM_BUILD_NUMBER) {
+        upstreamBuildNumber = env.UPSTREAM_BUILD_NUMBER
+    }
 
-    if (param == null) {
-        extractedParam = ""
-    }
-    else if (isDynamicParameter(param) == true) {
-        extractedParam = extractDynamicParameter(param, stashName)
-    }
-    else if (param instanceof java.lang.String && 
-                (param.indexOf("%") >= 0 || param.indexOf("\$") >= 0)) {
-        extractedParam = captureStdout("echo ${param}", isUnix())
-        extractedParam = extractedParam[0]
+    def validBranches = []
+    if (env.PF_GLOBAL_PARALLELINFO) {
+        // get parallel build info.
+        def branches
+        if (env.UPSTREAM_BRANCHES) {
+            // user defined parallel build info.
+            // usage: coverity analysis job on the same jenkins host
+            //        Coverity job: parallel coverity analysis
+            //        JIRA job: copyArtifacts stage + JIRA
+            branches = env.UPSTREAM_BRANCHES.split(",")
+        }
+        else {
+            // usage: like composition(parallel) + JIRA
+            unstash name: 'pf-global-parallelinfo'
+            def parallelInfo = readJSON file: 'parallelInfo.json'
+            branches = parallelInfo.branches
+        }
+        print "pfParallelInfo: branches, " + branches
+        if (copyPreviewReport == true) {
+            // copy upstream artifacts
+            for (def i=0; i<branches.size(); i++) {
+                def buildBranch = branches[i]
+                def ret = copyDefectsArtifacts(upstreamJobName, upstreamBuildNumber, buildBranch)
+                if (ret == true) {
+                    validBranches << buildBranch
+                }
+                else {
+                    print "pfParallelInfo: skip branch, ${buildBranch}"
+                }
+            }
+        }
     }
     else {
-        extractedParam = param
+        print "pfParallelInfo: single build"
+        if (copyPreviewReport == true) {
+            copyDefectsArtifacts(upstreamJobName, upstreamBuildNumber, null)
+        }
     }
 
-    return extractedParam
+    return validBranches
 }
 
-def unstashParameterScripts(stageConfigs) {
-    if (stageConfigs.containsKey("stashes") == true) {
-        for (def i=0; i<stageConfigs["stashes"].size(); i++) {
-            dir ('.pf-parameters') {
-                unstash name: stageConfigs["stashes"][i]
-            }
+def pfDeleteDir(dirToDelete) {
+    if (env.PF_BUILD_ENV == "none") {
+        dir (dirToDelete) {
+            deleteDir()
         }
+    }
+    else {
+        def cmd = decorateCommand("rm -rf ${dirToDelete}")
+        print "pfDeleteDir: ${cmd}"
+        sh cmd
     }
 }
 
 def unstashPipelineFramework() {
-    print "Unstash PF under "
-    if (isUnix()) {
-        sh "pwd"
-    }
-    else {
-        bat "dir"
-    }
+    print "Unstash PF under " + pwd()
     // unstash to PF_ROOT
     env.PF_ROOT = ".pf-all"
     print "env.PF_ROOT ${env.PF_ROOT}"
-    dir (env.PF_ROOT) {
-        deleteDir()
-        unstash name: 'stash-pf-main'
-        unstash name: 'stash-pf-settings'
-        unstash name: 'stash-pf-user-scripts'
-        unstash name: 'stash-pf-scripts'
-        unstash name: 'stash-pf-coverity'
-    }
-}
-
-def getStageConfig(plainStageName) {
-    dir (".pf-${plainStageName}") {
-        def config = readJSON file: 'stageConfig.json'
-        return config
-    }
-}
-
-def unstashScriptedParamScripts(plainStageName, stageConfigs, stageConfigsRet) {
-    def scriptableParams = stageConfigs.scriptableParams
-
-    for (def key in stageConfigs.keySet()) {
-        if (scriptableParams.contains(key)) {
-            // scripted params may be.
-            if (stageConfigs[key] instanceof net.sf.json.JSONArray || stageConfigs[key] instanceof java.util.ArrayList) {
-                stageConfigsRet."${key}" = []
-                // like scm_branchs: ["master"]
-                for (def i=0; i<stageConfigs[key].size(); i++) {
-                    stageConfigsRet[key][i] = extractScriptedParameter(stageConfigs[key][i], "stash-${plainStageName}-params-${key}-${i}")
-                }
-            }
-            else if (stageConfigs[key] instanceof java.util.LinkedHashMap) {
-                stageConfigsRet."${key}" = [:]
-                // like parallel_parameters: { "os": ["linux", "windows", "macos"] },
-                for (def paramKey in stageConfigs[key].keySet()) {
-                    for (def i=0; i<stageConfigs[key][paramKey].size(); i++) {
-                        stageConfigsRet[key][paramKey][i] = extractScriptedParameter(stageConfigs[key][paramKey][i], "stash-${plainStageName}-params-${key}-${paramKey}-${i}")
-                    }
-                }
+    dir (WORKSPACE) {
+        pfDeleteDir(env.PF_ROOT)
+        dir (env.PF_ROOT) {
+            // WORKAROUND (windows virus issue ITSDLC-779)
+            // windows agent would be disconnected after unstash "stash-pf-framework"
+            // call git clone to avoid this issue
+            // git clone jenkins-pipeline should be called prior to unstash name: "stash-pf-config", to avoid git "not an empty directory" error
+            if (isUnix() == true) {
+                unstash name: "stash-pf-framework"
             }
             else {
-                // scalar variables: like string, boolean
-                // ex. repo_path: "repo"
-                stageConfigsRet[key] = extractScriptedParameter(stageConfigs[key], "stash-${plainStageName}-params-${key}")
+                print "git clone (workaround)"
+                if (env.PF_DEBUG_RESTARTABLE) {
+                    bat """
+                    set GIT_SSL_NO_VERIFY=true && git clone ${PF_FRAMEWORK_URL}/gerrit/sdlc/jenkins-pipeline --depth 1 -b ${PF_FRAMEWORK_DEV_BRANCH} .
+                    """
+                }
+                else {
+                    bat """
+                    set GIT_SSL_NO_VERIFY=true && git clone ${PF_FRAMEWORK_URL}/gerrit/sdlc/jenkins-pipeline --depth 1 -b ${PF_FRAMEWORK_PROD_BRANCH} .
+                    """
+                }
             }
-        }
-        else {
-            stageConfigsRet[key] = stageConfigs[key]
+            print "unstash stash-pf-framework finished"
+            unstash name: "stash-pf-config"
+            print "unstash stash-pf-config finished"
         }
     }
 }
@@ -188,22 +170,6 @@ def isDynamicParameter(parameter) {
     return false
 }
 
-def extractDynamicParameter(parameter, stashName) {
-    def ret = [""]
-    def tokens = parameter.split()
-    dir (".parameter") {
-        unstash stashName
-        if (parameter.startsWith("sh") || parameter.startsWith("bash")) {
-            ret = captureStdout(parameter, true)
-        }
-        else {
-            ret = captureStdout(tokens[1], false)
-        }
-    }
-    print "utils: extracted parameter '${parameter}': '${ret[0]}'"
-    return ret[0].trim()
-}
-
 // for general commands, like echo "test"
 def captureStdout(command, underUnix) {
     def stdout = ""
@@ -224,69 +190,7 @@ def captureStdout(command, underUnix) {
     return stdout
 }
 
-def extractParameters(params) {
-    def paramsExtracted = []
-
-    for (def i=0; i<params.size(); i++) {
-        def param = params[i]
-        if (param.indexOf("\$") >= 0) {
-            param = utils.captureStdout("echo ${param}", isUnix())
-            if (param.size() > 0) {
-                def valueSplits = param[0].split(" ")
-                for (def j=0; j<valueSplits.size(); j++) {
-                    paramsExtracted << valueSplits[j]
-                }
-            }
-        }
-        else {
-            paramsExtracted << param
-        }
-    }
-
-    return paramsExtracted
-}
-
-def extractParallelParameters(parallelParameters) {
-    def parallelParametersExtracted = [:]
-
-    if (parallelParameters.size() > 0) {
-        for (def key in parallelParameters.keySet()) {
-            def values = parallelParameters."${key}"
-            parallelParametersExtracted."${key}" = extractParameters(values)
-        }
-    }
-    
-    return parallelParametersExtracted
-}
-
 def extractRealActionName(stageName) {
-    def actionName
-    def commonActions = ["config", "prebuild", "build", "postbuild", "test"]
-
-    if (stageName.indexOf('@') < 0) {
-        // build-dummy -> "build"
-        actionName = stageName.split(/-/)
-        actionName = actionName[0]
-    }
-    else {
-        // composition@build-dummy -> "build"
-        // composition-dummy@build-dummy -> "build"
-        def stageNameTokens = stageName.split(/@/)
-        actionName = stageNameTokens[1].toString().split(/-/)
-        actionName = actionName[0]
-    }
-
-    if (commonActions.contains(actionName)) {
-        actionName = "common_stage"
-    }
-    else if (actionName == "buildwithcoverity") {
-        actionName = "coverity"
-    }
-
-    return actionName
-}
-
-def extractActionName(stageName) {
     def actionName
 
     if (stageName.indexOf('@') < 0) {
@@ -309,9 +213,34 @@ def extractActionName(stageName) {
     return actionName
 }
 
+def extractActionName(stageName) {
+    def actionName
+
+    if (stageName.indexOf('@') < 0) {
+        // build-dummy -> "build"
+        actionName = stageName.split(/-/)
+        actionName = actionName[0]
+    }
+    else {
+        // composition@build-dummy -> "build"
+        // composition-dummy@build-dummy -> "build"
+        // composition-dummy@0@build-dummy -> "build"
+        def stageNameTokens = stageName.split(/@/)
+        def lastIndex = stageNameTokens.size() - 1
+        actionName = stageNameTokens[lastIndex].toString().split(/-/)
+        actionName = actionName[0]
+    }
+
+    if (actionName == "buildwithcoverity") {
+        actionName = "coverity"
+    }
+
+    return actionName
+}
+
 def finalizeInit(stageName, defaultConfigs) {
     // env.PF_PATH should have / suffix
-    writeJSON file: "${env.PF_PATH}settings/${stageName}_config.json", json: defaultConfigs["settings"]
+    writeJSON file: "${env.PF_PATH}settings/${stageName}_config.json", json: defaultConfigs, pretty: 2
     print "PF: writeback ${env.PF_PATH}settings/${stageName}_config.json"
 }
 
@@ -351,76 +280,165 @@ def commonInit(stageName, defaultConfigs) {
     }
 
     def config = [:]
-    config['settings'] = defaultConfigs
-    config['settings']['stageName'] = stageName
-    config['settings']['plainStageName'] = stageName.replaceAll("@", "at")
-    config['settings']['actionName'] = extractActionName(stageName)
-    config.preloads = [:]
-    config.preloads.stageName = stageName
-    config.preloads.plainStageName = stageName.replaceAll("@", "at")
-    config.preloads.actionName = extractActionName(stageName)
+    config = defaultConfigs
+    config['stageName'] = stageName
+    config['plainStageName'] = stageName.replaceAll("@", "at")
+    config['actionName'] = extractActionName(stageName)
 
     return config
 }
 
+def buildEnvPrefix(pfBuildEnv, pfBuildParams) {
+    def prefix = ""
+    def delimiter = pfBuildEnv.indexOf(":")
+    def buildEnv = pfBuildEnv.substring(0, delimiter)
+    def buildImage = pfBuildEnv.substring(delimiter + 1)
+    if (buildEnv == "docker") {
+        // --user \$(id -u):\$(id -g) would cause non-existed user error
+        //command = "docker run --rm --env-file <(env) -v ${WORKSPACE}:${WORKSPACE} -w ${WORKSPACE} ${buildImage} ${buildEnvParams} ${command}"
+        sh """
+            printenv > .pf-env
+        """
+        prefix = "docker run --rm --env-file .pf-env -v ${WORKSPACE}:${WORKSPACE} -w ${WORKSPACE} ${pfBuildParams} ${buildImage}"
+    }
+    else if (buildEnv == "singularity") {
+        def buildImages = buildImage.split(",")
+        def overlay = ""
+        if (buildImages.size() > 1) {
+            overlay = "--overlay ${buildImages[1]}"
+        }
+        // bind tmp to avoid COV_AUTH_KEY not found error
+        prefix = "singularity exec ${overlay} -B ${WORKSPACE}:${WORKSPACE} -B ${WORKSPACE_TMP}:${WORKSPACE_TMP} ${pfBuildParams} ${buildImages[0]}"
+    }
+    /*
+    else if (buildEnv == "slurm") {
+        def pythonExec = getPython()
+        command = "${pythonExec} ${env.PF_ROOT}/pipeline_scripts/slurmWrapper.py -h ${buildImage} ${command}"
+    }
+    */
+    return prefix
+}
+
 def decorateCommand(command) {
-    if (env.PF_BUILD_ENV) {
-        def delimiter = env.PF_BUILD_ENV.indexOf(":")
-        def buildEnv = env.PF_BUILD_ENV.substring(0, delimiter)
-        def buildImage = env.PF_BUILD_ENV.substring(delimiter + 1)
-        print("buildEnv ${buildEnv}")
-        print("buildImage ${buildImage}")
-        if (buildEnv == "docker") {
-            // --user \$(id -u):\$(id -g) would cause non-existed user error
-            command = "docker run --rm --env-file <(env) -v ${WORKSPACE}:${WORKSPACE} -w ${WORKSPACE} ${buildImage} ${command}"
-        }
-        else if (buildEnv == "singularity") {
-            def buildImages = buildImage.split(",")
-            def overlay = ""
-            if (buildImages.size() > 1) {
-                overlay = "--overlay ${buildImages[1]}"
-            }
-            command = "singularity exec ${overlay} -B ${WORKSPACE}:${WORKSPACE} -H ${WORKSPACE} ${buildImages[0]} ${command}"
-        }
+    if (env.PF_BUILD_ENV && env.PF_BUILD_ENV != "none") {
+        def prefix = buildEnvPrefix(env.PF_BUILD_ENV, env.PF_BUILD_ENV_PARAMS)
+        command = "${prefix} ${command}"
     }
 
+    print "decorateCommand: ${command}"
     return command
 }
 
+/*
+def resetPython() {
+    def pyEnv = "PF_PYEXEC"
+    if (env.BUILD_BRANCH) {
+        pyEnv = "PF_PYEXEC_${env.BUILD_BRANCH}"
+    }
+    env."${pyEnv}" = ""
+}
+*/
+
 def getPython() {
-    def testPython = decorateCommand("python --version")
-    def testPython3 = decorateCommand("python3 --version")
-	if (isUnix()) {
-		def statusPython = sh script: testPython, returnStatus: true
-		def statusPython3 = sh script: testPython3, returnStatus: true
-		if (statusPython3 == 0) {
-			return 'python3'
-		}
-		else if (statusPython == 0) {
-			return 'python'
-		}
-		else {
-            error("Please install python or switch to stable-pyless branch")
-		}
-	}
-	else {
-		def statusPython = bat script: testPython, returnStatus: true
-		def statusPython3 = bat script: testPython3, returnStatus: true
-		if (statusPython == 0) {
-			return 'python'
-		}
-		else if (statusPython3 == 0) {
-			return 'python3'
-		}
-		else {
-            error("Please install python or switch to stable-pyless branch")
-		}
-	}
+    def pyEnv = "PF_PYEXEC"
+    if (env.BUILD_BRANCH) {
+        pyEnv = "PF_PYEXEC_${env.BUILD_BRANCH}"
+    }
+    if (env."${pyEnv}") {
+        return env."${pyEnv}"
+    }
+    else {
+        def testPython = decorateCommand("python --version")
+        def testPython3 = decorateCommand("python3 --version")
+        if (isUnix()) {
+            def statusPython3 = sh script: testPython3, returnStatus: true
+            if (statusPython3 == 0) {
+                env."${pyEnv}" = "python3"
+            }
+            else {
+                def statusPython = sh script: testPython, returnStatus: true
+                if (statusPython == 0) {
+                    env."${pyEnv}" = "python"
+                }
+                else {
+                    error("Please install python or switch to stable-pyless branch")
+                }
+            }
+        }
+        else {
+            def statusPython = bat script: testPython, returnStatus: true
+            if (statusPython == 0) {
+                env."${pyEnv}" = "python"
+            }
+            else {
+                def statusPython3 = bat script: testPython3, returnStatus: true
+                if (statusPython3 == 0) {
+                    env."${pyEnv}" = "python3"
+                }
+                else {
+                    error("Please install python or switch to stable-pyless branch")
+                }
+            }
+        }
+        return env."${pyEnv}"
+    }
 }
 
-def pyExec(actionName, stageName, command, args) {
-    def plainStageName = stageName.replaceAll("@", "at")
+def downloadSif(pyEnv) {
+    def gerritProject = ""
+    def image = ""
+    def lfs = false
 
+    if (pyEnv == "python") {
+        gerritProject = "python"
+        image = "python.sif"
+    }
+    else if (pyEnv == "openai") {
+        gerritProject = "openai"
+        image = "linux.sif"
+        lfs = true
+    }
+
+    def imageExists = fileExists "${gerritProject}/${image}"
+    if (imageExists == false) {
+        sh """
+        GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline/singularity/${gerritProject} --depth 1
+        """
+        if (lfs == true) {
+            dir (gerritProject) {
+                sh """
+                git lfs pull
+                """
+            }
+        }
+    }
+
+    return "${gerritProject}/${image}"
+}
+
+def pyExec(actionName, stageName, command, args, pyEnv="RAW") {
+    def currentENV = env.PF_BUILD_ENV
+
+    print "pyExec: pyEnv ${pyEnv}"
+    if (pyEnv != "RAW") {
+        if (isUnix() == true) {
+            def img = ""
+            dir ("${env.PF_ROOT}/singularity") {
+                if (env.BUILD_URL.indexOf("apiproxy") >= 0) {
+                    // TODO: ugly workaround for apiproxy.rtkbf.com
+                    copyArtifacts filter: "python.sif", projectName: "Admin/download-pipelineframework"
+                    img = "python.sif"
+                }
+                else {
+                    img = downloadSif(pyEnv)
+                }
+            }
+            env.PF_BUILD_ENV = "singularity:${env.PF_ROOT}/singularity/${img}"
+            print "pyExec: PF_BUILD_ENV ${env.PF_BUILD_ENV}"
+        }
+    }
+
+    def plainStageName = stageName.replaceAll("@", "at")
     def pythonExec = getPython()
     def pyCmd = decorateCommand("${pythonExec} ${env.PF_ROOT}/pipeline_scripts/${actionName}.py -f ${env.PF_ROOT}/settings/${stageName}_config.json -w .pf-${plainStageName}")
     if (command != "") {
@@ -430,11 +448,163 @@ def pyExec(actionName, stageName, command, args) {
         pyCmd = "${pyCmd} ${args[i]} ${args[i + 1]}"
         i += 2
     }
+
     if (isUnix()) {
         sh pyCmd
     }
     else {
         bat pyCmd
+    }
+
+    env.PF_BUILD_ENV = currentENV
+}
+
+def shellScript(underUnix, dstFile, toolbox, workDir) {
+    if (dstFile.endsWith(".py")) {
+        def pythonExec = utils.getPython()
+        if (underUnix == true) {
+            sh "PF_WORK_DIR=${workDir} ${pythonExec} ${dstFile}"
+        }
+        else {
+            bat "set PF_WORK_DIR=${workDir} && ${pythonExec} ${dstFile}"
+        }
+        return
+    }
+
+    if (underUnix == true || dstFile.endsWith(".sh")) {
+        if (toolbox != "") {
+            toolbox = "${toolbox} "
+        }
+        def statusCode = sh script: "${toolbox}bash", returnStatus: true
+        if (statusCode == 0) {
+            sh "${toolbox}bash -xe '${dstFile}'"
+        }
+        else {
+            sh "${toolbox}sh -xe '${dstFile}'"
+        }
+    }
+    else {
+        bat "\"${dstFile}\""
+    }
+}
+
+def fileScript(underUnix, type, script, toolbox, sshcredentials, workDir) {
+    def dstFile
+    if (underUnix == true || script.endsWith(".sh")) {
+        def userScripts = fileExists "${env.PF_ROOT}/scripts/${script}"
+        if (userScripts) {
+            dstFile = "${env.PF_ROOT}/scripts/${script}"
+        }
+        else {
+            dstFile = "${env.PF_ROOT}/pipeline_scripts/${script}"
+        }
+    }
+    else {
+        dstFile = "${env.PF_ROOT}\\scripts\\${script}"
+    }
+    if (type == "source") {
+        // TODO: support configs.types[i] == "." for sh/dash
+        // notice: shebang should be written at first line
+        sh """#!/bin/bash
+            mypwd=\$PWD
+            printenv > .private-source-before
+            . ${dstFile}
+            cd \$mypwd
+            printenv > .private-source-after
+        """
+        def lines = sh(script: "diff -u .private-source-before .private-source-after | grep -E '^\\+'", returnStdout: true).trim()
+        lines = lines.readLines().drop(1) // drop first line
+        for (def line in lines) {
+            if (line.startsWith("+")) {
+                def tokens = line.split("=")
+                if (tokens[0] == "+_" || tokens[0] == "+OLDPWD") {
+                    // skip self (printenv), OLDPWD
+                }
+                else {
+                    def varname = tokens[0].substring(1, tokens[0].length())
+                    def varvalue = tokens[1]
+
+                    exportEnvVar(varname, varvalue)
+                }
+            }
+        }
+    }
+    else if (type == "groovy") {
+        def externalMethod = load(dstFile)
+        externalMethod.func()
+    }
+    else if (type == "file") {
+        if (sshcredentials == "") {
+            shellScript(underUnix, dstFile, toolbox, workDir)
+        }
+        else {
+            sshagent(credentials: [sshcredentials]) {
+                shellScript(underUnix, dstFile, toolbox, workDir)
+            }
+        }
+    }
+}
+
+def inlineScript(command, underUnix, toolbox) {
+    if (underUnix == true) {
+        if (toolbox != "") {
+            toolbox = "${toolbox} "
+        }
+        sh toolbox + command
+    }
+    else {
+        bat command
+    }
+}
+
+def archiveStageArtifacts(stageName) {
+    def artifacts = []
+    def plainStageName = stageName.replaceAll("@", "at")
+    dir (".pf-${plainStageName}") {
+        def hasArtifacts = fileExists ".artifacts"
+        if (hasArtifacts == true) {
+            def line = readFile file: ".artifacts"
+            artifacts = line.split(",")
+            print "archiveStageArtifacts: ${artifacts}"
+        }
+    }
+    for (def artifact in artifacts) {
+        if (artifact != "") {
+            if (artifact.startsWith("WORKSPACE:")) {
+                archiveArtifacts artifacts: artifact.substring(artifact.indexOf(':') + 1), allowEmptyArchive: true
+            }
+            else {
+                dir (".pf-${plainStageName}") {
+                    archiveArtifacts artifacts: artifact, allowEmptyArchive: true
+                }
+            }
+        }
+    }
+}
+
+def exportEnvVar(varname, varvalue) {
+    // Note: BUILD_BRANCH prefix should be add to variable name,
+    // or redundant variables will be declared
+    if (env.BUILD_BRANCH != null) {
+        if (varname.startsWith("PIPELINEGLOBAL_")) {
+            varname = varname.substring(15)
+            //print "Export general pipeline env. variables(aux.): ${varname} ${varvalue}"
+            env."$varname" = varvalue
+        }
+        varname = "BR${env.BUILD_BRANCH}_${varname}"
+        //print "Export parallel-build pipeline env. variables: ${varname} ${varvalue}"
+        env."$varname" = varvalue
+    }
+    else {
+        //print "Export general pipeline env. variables: ${varname} ${varvalue}"
+        env."$varname" = varvalue
+    }
+
+    if (varname.indexOf("PASS") >= 0 || varname.indexOf("TOKEN") >= 0) {
+        print "Export pipeline env. variables: ${varname} ******"
+    }
+    else {
+        print "Export pipeline env. variables: ${varname} ${varvalue}"
     }
 }
 
@@ -446,27 +616,27 @@ def exportEnv() {
         for (def line in lines) {
             def tokens = line.split("=")
             if (tokens.size() > 1) {
-                env."${tokens[0]}" = tokens[1]
-                print("exportEnv ${tokens[0]} ${tokens[1]}")
+                if (tokens[1].startsWith("TEXT_")) {
+                    tokens[1] = tokens[1].substring(5)
+                    exportEnvVar(tokens[0], tokens[1].replaceAll(",", "\n"))
+                }
+                else {
+                    exportEnvVar(tokens[0], tokens[1])
+                }
             }
             else {
-                env."${tokens[0]}" = ""
-                print("exportEnv ${tokens[0]} ''")
+                // empty env. var is not allowed in Jenkins
+                exportEnvVar(tokens[0], "PF_NONE")
             }
         }
     }
 }
 
-def loadAction(actionName) {
-    def commonActions = ["config", "prebuild", "build", "postbuild", "test"]
+def loadCoreAction(relativePath, actionName) {
     def action = null
 
-    dir (".pipeline-actions") {
-        unstash "stash-actions-${actionName}"
-        if (commonActions.contains(actionName)) {
-            action = load("common_stage.groovy")
-        }
-        else {
+    dir (relativePath) {
+        dir ("groovys") {
             action = load("${actionName}.groovy")
         }
     }
@@ -474,26 +644,40 @@ def loadAction(actionName) {
     return action
 }
 
-def queryURFCICDStatus(account, token, smsId) {
-    def ret = -1
-    def postParam = "Account=${account}&Token=${token}&Id=${smsId}"
-    def cmd = "curl -d \"${postParam}\" -o .pf-queryurf.json https://sms.realtek.com/RestApi/ReleaseStatus"
-    try {
-        if (isUnix()) {
-            sh cmd
+def loadUserAction(relativePath, actionName) {
+    def action = null
+
+    dir (relativePath) {
+        dir ("scripts") {
+            action = load("${actionName}.groovy")
         }
-        else {
-            bat cmd
-        }
-        def jsonObject = readJSON file: '.pf-queryurf.json'
-        ret = jsonObject.CICDStatus.toInteger()
-    }
-    catch (e) {
-        print e
     }
 
-    print "Query SMS CICDStatus: ${ret}"
-    return ret
+    return action
+}
+
+def jsonArrayToString(jsonArray, delimiter) {
+    def pureArray = []
+    for (def i=0; i<jsonArray.size(); i++) {
+        pureArray.add(jsonArray[i])
+    }
+    if (pureArray.size() == 0) {
+        return ""
+    }
+    else {
+        return pureArray.join(delimiter)
+    }
+}
+
+def translateConfig(stageName) {
+    def pythonExec = utils.getPython()
+    def translateCmd = "${pythonExec} ${env.PF_ROOT}/pipeline_scripts/utils.py -f ${env.PF_ROOT}/settings/${stageName}_config.json -c TRANSLATE_CONFIG"
+    if (isUnix()) {
+        sh translateCmd
+    }
+    else {
+        bat translateCmd
+    }
 }
 
 return this

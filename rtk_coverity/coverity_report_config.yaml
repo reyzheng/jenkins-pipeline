@@ -27,9 +27,9 @@ disa-stig:
 cert-report:
     target-level:
 ################## Synopsys Software Integrity Report #############
-ssir-report:
-    analysis-date:
-    legal-text:
+#ssir-report:
+#    analysis-date:
+#    legal-text:
 ################## Coverity Integrity Report #############
 cir-report:
     project-description:

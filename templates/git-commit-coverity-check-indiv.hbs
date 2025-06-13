@@ -1,0 +1,50 @@
+File Information
+The following file content **already includes the patch**. Do **not** reapply the patch. Instead, analyze the **patched lines** for potential Coverity defects and provide a **fully corrected version of the file** if necessary.
+File: $file_path
+```
+$file_content
+```
+Patch Content (for reference only, do not apply again):
+```
+$patch
+```
+Note: If "Patch Content" is empty, analyze the entire file for defects.
+
+#### Coverity Defects Analysis
+Analyze the provided file **as it exists after the patch has been applied**. Identify any **newly introduced Coverity defects** in the modified lines or, if no patch content is present, in the entire file.
+1. Defect Identification Guidelines:
+- If "Patch Content" is **available**, focus on the modified lines to check for newly introduced defects.
+- If "Patch Content" is **empty**, analyze the entire file for defects.
+- Common defects to check for:
+$CODE_ANALYSIS_RULES
+For each defect detected, provide:
+  - Type: The category of the defect (e.g., null pointer dereference, uninitialized variable).
+  - Location: The **exact line number(s)** where the defect occurs.
+  - Risk: The potential impact of the defect.
+2. Full File Correction:
+If defects are identified, output the **entire corrected version of the file without any omissions or placeholders.**
+⚠ WARNING: **Strict Output Rules:**
+✔ REQUIRED: **Provide the full file content**—not just the modified parts.
+✖ DO NOT: **Absolutely no placeholders** such as:
+- "/*...(rest of the file remains the same)...*/"
+- "// ... rest of the file content remains the same ..."
+- "[...]"
+- "// unchanged lines omitted"
+  ✔ REQUIRED: **Every single line of the original file must be present, even if unchanged.**
+  ✔ REQUIRED: **Only apply necessary fixes**—do not make unnecessary changes to formatting or structure.
+  ✔ REQUIRED: **Maintain the original file format and indentation**, except where fixes are required.
+If **no defects** are found and no changes are needed, explicitly state: **"No changes necessary."**
+
+---
+${GPT_OUTPUT_FORMAT}
+---
+#### YAML and Output Compliance Requirements:
+⚠ WARNING: **GPT must strictly follow these rules:**
+- **All string values must be properly quoted** if they contain : (colons), special characters, or line breaks.
+- **No placeholders, no summaries, no omitted content.** The corrected_file.content field **must** include the **entire file** in its original structure, with only necessary corrections.
+- **Ensure correct YAML indentation** (no mixed spaces/tabs).
+- **Failure to follow these rules will result in an invalid output. GPT must always provide the full corrected file.**
+---
+Final Emphasis:
+⚠ WARNING: DO NOT OMIT ANY LINES FROM THE FILE. OUTPUT THE ENTIRE FILE. NO PLACEHOLDERS, NO SUMMARIZATION, NO ABBREVIATIONS.
+⚠ WARNING: FAILURE TO INCLUDE THE FULL FILE CONTENT WILL RESULT IN A NON-COMPLIANT OUTPUT.

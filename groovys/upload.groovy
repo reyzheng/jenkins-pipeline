@@ -1,26 +1,20 @@
-import groovy.transform.Field
-
 def init(stageName) {
     def defaultConfigs = [
-        display_name: "",
+        display_name: "upload",
+        enabled: true,
         src_files: "",
         dst_dir: ""
     ]
-    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
-
-    dir(env.PF_PATH + 'scripts') {
-        print "Upload: " + config.settings.src_files
-        stash name: "stash-${config.preloads.plainStageName}-files", includes: config.settings.src_files
-    }
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(pipelineAsCode, config, preloads) {
-    dir(config.dst_dir) {
-        unstash "stash-${preloads.plainStageName}-files"
-    }
+def func(stageName) {
+    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
+
+    utils.pyExec(configs["actionName"], configs["stageName"], "", [])
 }
 
 return this

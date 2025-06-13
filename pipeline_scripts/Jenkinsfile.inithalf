@@ -1,27 +1,59 @@
 def pf
+def pfInit(setMainAgent) {
+    def _pf
+    // restrict pf.init() under ".pf-framework", to mitigate PF_PATH finding cost
+    def frameworkExists = fileExists ".pf-framework/rtk_stages.groovy"
+    def configExists = fileExists ".pf-framework/**/global_config.json"
 
-def pfInit() {
-	dir (".pf-config") {
-		checkout scm
-		stash name: "pf-config", includes: "**"
-	}
-	dir (".pf-framework") {
-		deleteDir()
-		if (isUnix() == true) {
-			sh "GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b stable-py ."
-		}
-		else {
-			bat "set GIT_SSL_NO_VERIFY=true && git clone https://mirror.rtkbf.com/gerrit/sdlc/jenkins-pipeline --depth 1 -b stable-py ."
-		}
-		stash name: "pf-framework", includes: "**"
-	}
-    dir ("scripts") {
-        // ugly work around, while cleanWS diabled
-        deleteDir()
+    if (frameworkExists == true && configExists == true) {
+        dir (".pf-framework") {
+            print "Jenkinsfile.restartable starts at the same agent"
+            _pf = load("rtk_stages.groovy")
+            _pf.init()
+        }
     }
-	unstash name: "pf-config"
-	unstash name: "pf-framework"
-	def _pf = load("rtk_stages.groovy")
-	_pf.init()
-	return _pf
+    else {
+        // Jenkinsfile.restartable does not start at the same agent
+        dir (".pf-framework") {
+            deleteDir()
+            if (isUnix() == true) {
+                unstash name: "pf-framework"
+            }
+            else {
+                if (env.PF_DEBUG_RESTARTABLE) {
+                    bat """
+                        set GIT_SSL_NO_VERIFY=true && git clone ${PF_FRAMEWORK_URL}/gerrit/sdlc/jenkins-pipeline --depth 1 -b ${PF_FRAMEWORK_DEV_BRANCH} .
+                    """
+                }
+                else {
+                    bat """
+                        set GIT_SSL_NO_VERIFY=true && git clone ${PF_FRAMEWORK_URL}/gerrit/sdlc/jenkins-pipeline --depth 1 -b ${PF_FRAMEWORK_PROD_BRANCH} .
+                    """
+                }
+            }
+
+            try {
+                unstash name: "pf-config"
+            }
+            catch (e) {
+                // exception caused by Old-fashion Jenkinsfile.appetizer
+                print "Old-fashion Jenkinsfile.appetizer"
+                dir (".pf-config") {
+                    deleteDir()
+                checkout scm
+                stash name: "pf-config", includes: "**"
+                }
+                unstash name: "pf-config"
+            }
+
+            _pf = load("rtk_stages.groovy")
+            _pf.init()
+        }
+    }
+
+    if (setMainAgent == true) {
+        env.PF_MAIN_AGENT = env.NODE_NAME
+    }
+    _pf.pascCleanWs()
+    return _pf
 }

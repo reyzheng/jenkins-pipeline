@@ -17,11 +17,6 @@ def init(stageName) {
 
     def config = utils.commonInit(stageName, defaultConfigs)
     utils.finalizeInit(stageName, config)
-    /*
-    dir ('pipeline_scripts') {
-        stash name: "stash-script-${stageName}", includes: "defensicsParser.py"
-    }
-    */
 
     return config
 }

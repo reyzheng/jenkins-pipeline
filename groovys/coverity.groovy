@@ -1,7 +1,9 @@
+
 def init(stageName) {
     def defaultConfigs = [
         // script
         display_name: "",
+        stage_lock: false,
         failfast: false,
         sshcredentials: "",
         types: [],
@@ -15,10 +17,19 @@ def init(stageName) {
         // coverity
         coverity_scan_enabled: true,
         coverity_local_report: true,
+        coverity_local_analysis: false,
+        // none, accumulate, iterate
+        coverity_codetek_training: "none",
+        coverity_codetek_inference_only: false,
+        coverity_codetek_sshagent: "",
+        training_revision_start: "none",
+        training_revision_end: "none",
         coverity_analyze_defects: false,
         coverity_report_path: '',
         coverity_analyze_defects_options: "",
         coverity_analyze_defects_excomponents: "",
+        // author: assign defects to author
+        // component: group defects by component (RSIPCam proprietary)
         coverity_defects_assign_policy: "author",
         // meaningless for coverity_defects_assign_policy 'component'
         coverity_analyze_rtkonly: false,
@@ -30,9 +41,10 @@ def init(stageName) {
         coverity_scan_toolbox_args: '',
         coverity_secondary_toolbox: '',
         //coverity_xml: 'coverity_idir/coverity.xml',
-        coverity_build_dir: '.pf-covconfig/build',
+        coverity_build_dir: '.pf-covbuild',
         coverity_project: [],
         coverity_stream: [],
+        coverity_static_configuration: false,
         coverity_comptype_platform: [],
         coverity_comptype_prefix: [],
         coverity_comptype: [],
@@ -40,41 +52,34 @@ def init(stageName) {
         //coverity_comptype_ld: [],
         coverity_build_option: [],
         coverity_clean_builddir: true,
+        coverity_configure_option: [],
         coverity_analyze_parent: "none",
         coverity_analyze_option: [],
+        allow_empty_analysis: false,
+        coverity_analysis_operation: "ALL",
         // default 'default' at def init(stageName)
         coverity_checker_enablement: [],
+        coverity_checker_extra: [],
         coverity_coding_standards: [],
         // coverity_pattern_specified, coverity_pattern_excluded conflicts with coverity_analyze_rtkonly
         coverity_pattern_specified: [],
         coverity_pattern_excluded: [],
 
+        coverity_commit_excluded: [],
+        coverity_commit_additional: [],
+
         coverity_snapshot_version: [],
         coverity_snapshot_description: [],
 
-        scriptableParams: ["coverity_host", "coverity_port", "coverity_analyze_defects", "coverity_scan_enabled", "coverity_analyze_parent", "coverity_project", "coverity_stream", "coverity_build_dir", "coverity_comptype", "coverity_comptype_gcc", "coverity_snapshot_version", "coverity_snapshot_description"]
+        staticParams: ["coverity_snapshot_version", "coverity_snapshot_description", "coverity_checker_enablement"]
     ]
     def mapConfig = utils.commonInit(stageName, defaultConfigs)
-    if (mapConfig["settings"]["coverity_analyze_defects_options"] == "") {
-        mapConfig["settings"]["coverity_analyze_defects_options"] = [:]
+    if (mapConfig["coverity_analyze_defects_options"] == "") {
+        mapConfig["coverity_analyze_defects_options"] = [:]
     }
     else {
-        mapConfig["settings"]["coverity_analyze_defects_options"] = readJSON text: mapConfig["settings"]["coverity_analyze_defects_options"]
+        mapConfig["coverity_analyze_defects_options"] = readJSON text: mapConfig["coverity_analyze_defects_options"]
     }
-    // check credentials
-    /*
-    // TODO: 
-    def underUnix = isUnix()
-    if (mapConfig.settings.coverity_auth_key_credential != "" && underUnix == true) {
-        withCredentials([file(credentialsId: mapConfig.settings.coverity_auth_key_credential, variable: 'KEY_PATH')]) {
-            def keyObj = readJSON file: KEY_PATH
-            def checkHealth = utils.captureStdout("set +x && curl --header 'Accept: application/json' --user ${keyObj.username}:${keyObj.key} http://${mapConfig.settings.coverity_host}:${mapConfig.settings.coverity_port}/api/v2/serverInfo/version", underUnix)
-            if (checkHealth[0] == "Authentication failed.") {
-                error("${stageName}: invalid coverity credentials")
-            }
-        }
-    }
-    */
     utils.finalizeInit(stageName, mapConfig)
 
     return mapConfig
@@ -91,6 +96,29 @@ def func(stageName) {
 
     utils.pyExec(configs["actionName"], configs["stageName"], "TRANSLATE_CONFIG", [])
     configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
+    if (env.PF_COV_CREDENTIALS == "") {
+        env.PF_COV_CREDENTIALS = configs["coverity_auth_key_credential"]
+    }
+    env.PF_COV_HOST = configs['coverity_host']
+    env.PF_COV_PORT = configs['coverity_port']
+    if (configs["coverity_codetek_training"] != "none") {
+        dir (env.PF_ROOT) {
+            dir ("pipeline_scripts") {
+                dir ("covtek") {
+                    checkout(scm: [$class: 'GitSCM',
+                        extensions: [
+                            [$class: 'CloneOption',
+                                depth: 1,
+                                timeout: 60]],
+                        userRemoteConfigs: [[
+                            url: "https://mirror.rtkbf.com/gerrit/sdlc/coverity-training"]],
+                        branches: [[name: "develop"]]
+                    ])
+                }
+            }
+        }
+    }
+
     try {
         utils.pyExec(configs["actionName"], configs["stageName"], "INIT_WORKDIR", [])
         for (def i=0; i<configs["types"].size(); i++) {
@@ -101,23 +129,20 @@ def func(stageName) {
                     continue
                 }
             }
+
             withCredentials([file(credentialsId: configs["coverity_auth_key_credential"], variable: 'COV_AUTH_KEY')]) {
                 def args = ["-d", "${i}"]
-                utils.pyExec(configs["actionName"], configs["stageName"], "ANALYZE", args)
-            }
-            if (configs["coverity_local_report"] == true) {
-                dir (".pf-${plainStageName}") {
-                    archiveArtifacts artifacts: "coverityReport*.zip", allowEmptyArchive: true
-                }
-            }
-            if (configs["coverity_analyze_defects"] == true || configs["coverity_analyze_defects"] == "true") {
-                if (env.BUILD_BRANCH != null) {
-                    archiveArtifacts artifacts: "preview-report-committer-${env.BUILD_BRANCH}.json"
+                if (configs["coverity_codetek_sshagent"] == "") {
+                    utils.pyExec(configs["actionName"], configs["stageName"], "ANALYZE", args, pyEnv="RAW")
                 }
                 else {
-                    archiveArtifacts artifacts: 'preview-report-committer.json'
+                    sshagent(credentials: [configs["coverity_codetek_sshagent"]]) {
+                        utils.pyExec(configs["actionName"], configs["stageName"], "ANALYZE", args, pyEnv="RAW")
+                    }
                 }
             }
+
+            utils.archiveStageArtifacts(configs["stageName"])
         }
 
         dir (".pf-${plainStageName}") {
@@ -128,13 +153,16 @@ def func(stageName) {
             if (env.BUILD_BRANCH) {
                 stashName = "htmlreport-${plainStageName}-${env.BUILD_BRANCH}"
             }
-            stash name: stashName, includes: ".pf-htmlreport", allowEmpty: true
+            stash name: stashName, includes: "pf-htmlreport.html", allowEmpty: true
             env.PF_HTMLREPORTS = env.PF_HTMLREPORTS + "${stashName},"
         }
 
         env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS += "Build $branchSubDescription SUCCESS;"
     }
     catch (e) {
+        dir (".pf-${plainStageName}") {
+            utils.exportEnv()
+        }
         if (configs["failfast"] == true) {
             error(message: "${configs.stageName} " + e)
         }

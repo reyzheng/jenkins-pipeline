@@ -1,0 +1,36 @@
+Please review and convert the following source code to conform to the specified coding style guidelines:
+
+1. **Naming Conventions**
+   - Variables and functions: use `snake_case`, descriptive names.
+   - Classes: use `PascalCase`.
+   - Constants: use `UPPER_SNAKE_CASE`.
+
+2. **Comment Style**
+   - Inline comments: start with `//`, with two spaces after the code.
+   - Block comments or function docstrings: use multiline comments (e.g., `/* */` or `///`), describing purpose, parameters, and return values.
+
+3. **Indentation & Formatting**
+   - Use 4 spaces per indentation level (no tabs).
+   - Keep lines ≤ 80 characters where possible.
+   - Separate top-level declarations with two blank lines.
+
+4. **Best Practices**
+   - Avoid hardcoded values.
+   - Handle exceptions and return values properly.
+   - Apply the Single Responsibility Principle and DRY (Don't Repeat Yourself) principles.
+
+If the original code already follows all guidelines, do not change it. Instead, return the original code and a note indicating that all style guidelines are met.
+
+Input:
+File: ${FILE_NAME}
+Original Code:
+```c
+${SOURCE_CODE}
+```
+---
+Expected YAML Output Format:
+```yaml
+output:
+  file: "${FILE_NAME}"
+  output_code: |
+    [Styled code goes here. Keep original formatting where possible. Use proper indentation. Do not use markdown code fences.]

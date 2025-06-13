@@ -1,20 +1,6 @@
 def checkConfig(config) {
-    def settings = config.settings
-    def preloads = config.preloads
-
-    if (settings.unified_release_flow_balckduck_report == true) {
-        dir ("groovys") {
-            stash name: "stash-actions-blackduckreport", includes: "blackduckreport.groovy"
-        }
-    }
-    if (settings.unified_release_flow_coverity_report == true) {
-        dir ("groovys") {
-            stash name: "stash-actions-coverityreport", includes: "coverityreport.groovy"
-        }
-    }
-
-    if (settings.unified_release_flow == true) {
-        if (settings.release_sftp_key == "") {
+    if (config.unified_release_flow == true) {
+        if (config.release_sftp_key == "") {
             error("Warning: infra URF support ends in 2022 Mid. September, please set SMS ssh public key")
         }
         else {
@@ -23,14 +9,14 @@ def checkConfig(config) {
             if (buildUrl.indexOf("-infra") > 0) {
                 sftpHost = "rsdmft.rtkbf.com"
             }
-            def urfUser = settings.release_urf_user
+            def urfUser = config.release_urf_user
             urfUser = urfUser.split("@")
             urfUser = urfUser[0]
             dir(".mfttest") {
                 def statusCode
                 def batFile = "bye"
                 writeFile file: "bat", text: batFile
-                withCredentials([sshUserPrivateKey(credentialsId: settings.release_sftp_key, keyFileVariable: 'keyfile')]) {
+                withCredentials([sshUserPrivateKey(credentialsId: config.release_sftp_key, keyFileVariable: 'keyfile')]) {
                     if (isUnix() == true) {
                         statusCode = sh script: "sftp -P 22 -c aes128-cbc -b bat -o \"StrictHostKeyChecking=no\" -i \${keyfile} ${urfUser}@${sftpHost}", returnStatus: true
                     }
@@ -59,16 +45,19 @@ def init(stageName) {
         release_enabled: true,
         node: "",
         unified_release_flow: false,
+        // ANT-style pattern
         unified_release_flow_files: [],
         unified_release_flow_config: "settings/URF/config",
         unified_release_flow_coverity_report: false,
         coverity_report_ignored: false,
         coverity_report_toolpath: "",
         coverity_report_config: "",
+        coverity_report_latest_snapshot: false,
         unified_release_flow_coverity_projects: [],
         unified_release_flow_balckduck_report: false,
         unified_release_flow_blackduck_projects: [],
         unified_release_flow_blackduck_versions: [],
+        unified_release_flow_user_reports: [],
         release_script_type: "",
         release_script: "",
         release_archive_artifacts: false,
@@ -92,21 +81,15 @@ def init(stageName) {
     def utils = load "utils.groovy"
     def mapConfig = utils.commonInit(stageName, defaultConfigs)
 
-    if (mapConfig["settings"]["release_urf_token"] == "") {
-        mapConfig["settings"]["release_urf_user"] = env.PF_SMS_ACCOUNT
-        mapConfig["settings"]["release_urf_token"] = env.PF_SMS_CREDENTIALS
+    if (mapConfig["release_urf_token"] == "") {
+        mapConfig["release_urf_user"] = env.PF_SMS_ACCOUNT
+        mapConfig["release_urf_token"] = env.PF_SMS_CREDENTIALS
     }
-    if (mapConfig["settings"]["blackduckreport_token_credential"] == "") {
-        mapConfig["settings"]["blackduckreport_token_credential"] = env.PF_BD_CREDENTIALS
+    if (mapConfig["blackduckreport_token_credential"] == "") {
+        mapConfig["blackduckreport_token_credential"] = env.PF_BD_CREDENTIALS
     }
-    if (mapConfig["settings"]["coverity_report_key_credential"] == "") {
-        mapConfig["settings"]["coverity_report_key_credential"] = env.PF_COV_CREDENTIALS
-    }
-    if (mapConfig["settings"]["release_enabled"] == true && mapConfig["settings"]["unified_release_flow"] == true) {
-        if (mapConfig["settings"]["unified_release_flow_bom"] == "") {
-            // hint 'source' action to generate SBOM on-the-fly
-            env.PF_SOURCE_REVISION = "true"
-        }
+    if (mapConfig["coverity_report_key_credential"] == "") {
+        mapConfig["coverity_report_key_credential"] = env.PF_COV_CREDENTIALS
     }
     checkConfig(mapConfig)
     utils.finalizeInit(stageName, mapConfig)
@@ -131,31 +114,10 @@ def exec(stageName) {
     def vars = readJSON file: configPath
     def underUnix = isUnix()
     if (vars.release_script_type == "inline") {
-        if (underUnix == true) {
-            sh vars.release_script
-        }
-        else {
-            bat vars.release_script
-        }
+        utils.inlineScript(vars["release_script"], underUnix, "")
     }
     else if (vars.release_script_type != "") {
-        def dstFile = ".pf-all/scripts/" + vars["release_script"]
-
-        if (vars.release_script_type == "source") {
-            sh ". " + dstFile
-        }
-        else if (vars.release_script_type == "groovy") {
-            def externalMethod = load(dstFile)
-            externalMethod.func()
-        }
-        else if (vars.release_script_type == "file") {
-            if (underUnix == true) {
-                sh "sh " + dstFile
-            }
-            else {
-                bat ".pf-all\\scripts\\" + vars["release_script"]
-            }
-        }
+        utils.fileScript(underUnix, vars["release_script_type"], vars["release_script"], "", "", ".pf-${vars.plainStageName}")
     }
 
     try {
@@ -177,47 +139,40 @@ def exec(stageName) {
         // case 3.2: user-defined file in jenkins-config repo, reload here
         def urfBOM = ""
         if (vars["unified_release_flow_bom"] == "") {
-            try {
-                def stashName = 'pf-revision-info'
+            dir (".pf-${plainStageName}") {
+                def stashes = []
+                // case 1: release under specific build branch
                 if (env.BUILD_BRANCH) {
-                    stashName += "-${env.BUILD_BRANCH}"
+                    stashes << "pf-revision-info-${env.BUILD_BRANCH}"
                 }
-                unstash name: stashName
-            }
-            catch (e) {}
-            try {
-                def jsonGitInfo = readJSON file: '.pf-revision-info'
-                // git
-                def originRemote
-                urfBOM = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
-                urfBOM += "<manifest>\n"
-                for (def i=0; i<jsonGitInfo.sources.size(); i++) {
-                    def revision = jsonGitInfo.sources[i]
-                    if (i == 0) {
-                        urfBOM += "<remote fetch=\"${revision.addr}\" name=\"origin\" />\n"
-                        urfBOM += "<default remote=\"origin\" revision=\"master\" />\n"
-                        // take the 0th source as origin remote
-                        originRemote = revision.addr
-                    }
-                    else {
-                        if (originRemote != revision.addr) {
-                            urfBOM += "<remote fetch=\"${revision.addr}\" name=\"remote${i}\" />\n"
+                else {
+                    // case 2: release after parallel builds
+                    if (env.PF_GLOBAL_PARALLELINFO) {
+                        unstash name: 'pf-global-parallelinfo'
+                        def parallelInfo = readJSON file: 'parallelInfo.json'
+                        for (def i=0; i<parallelInfo.branches.size(); i++) {
+                            def buildBranch = parallelInfo.branches[i]
+                            stashes << "pf-revision-info-${buildBranch}"
                         }
                     }
-                    if (originRemote == revision.addr) {
-                        urfBOM += "<project name=\"${revision.name}\" path=\"${revision.path}\" revision=\"${revision.revision}\" upstream=\"${revision.upstream}\"/>\n"
-                    }
+                    // case 3: release after single build
                     else {
-                        urfBOM += "<project name=\"${revision.name}\" path=\"${revision.path}\" revision=\"${revision.revision}\" upstream=\"${revision.upstream}\" remote=\"remote${i}\"/>\n"
+                        stashes << "pf-revision-info"
+                    }
+                    print "exec(release): build branches ${stashes}"
+                }
+                dir ("revision_info") {
+                    deleteDir()
+                    for (def i=0; i<stashes.size(); i++) {
+                        dir ("source_${i}") {
+                            try {
+                                unstash name: stashes[i]
+                            }
+                            catch (e) {}
+                        }
                     }
                 }
-                urfBOM += "</manifest>"
             }
-            catch (e) {
-                // repo
-                urfBOM = readFile '.pf-revision-info'
-            }
-            writeFile file: 'URFSBOM', text: urfBOM
             print "SBOM, got from source stage"
         }
         else if (vars["unified_release_flow_bom"].startsWith('source:') == true) {
@@ -227,13 +182,14 @@ def exec(stageName) {
             print "SBOM, file content: " + vars["unified_release_flow_bom"]
         }
 
-        for (def ite=0; ite<vars["unified_release_flow_files"].size(); ite++) {
-            filename = vars["unified_release_flow_files"][ite]
-            if (filename.startsWith('artifacts:')) {
-                // release artifacts
-                filename = filename.split(":")
-                filename = filename[1].trim()
-                dir (".pf-${plainStageName}/release_artifacts") {
+        dir (".pf-${plainStageName}/release_artifacts") {
+            deleteDir()
+            for (def ite=0; ite<vars["unified_release_flow_files"].size(); ite++) {
+                def filename = vars["unified_release_flow_files"][ite]
+                if (filename.startsWith('artifacts:')) {
+                    // release artifacts
+                    filename = filename.split(":")
+                    filename = filename[1].trim()
                     step([$class: 'CopyArtifact', 
                             filter: filename, 
                             flatten: false, 
@@ -241,6 +197,37 @@ def exec(stageName) {
                             selector: [$class: 'SpecificBuildSelector', 
                             buildNumber: '${BUILD_NUMBER}'], 
                         target: './'])
+                }
+                else if (filename.startsWith('stash:')) {
+                    // release artifacts
+                    filename = filename.split(":")
+                    filename = filename[1].trim()
+                    unstash name: filename
+                }
+            }
+        }
+        for (def ite=0; ite<vars["unified_release_flow_user_reports"].size(); ite++) {
+            def filename = vars["unified_release_flow_user_reports"][ite]
+            if (filename.startsWith('artifacts:')) {
+                // release artifacts
+                filename = filename.split(":")
+                filename = filename[1].trim()
+                dir (".pf-${plainStageName}/report_artifacts") {
+                    step([$class: 'CopyArtifact',
+                            filter: filename,
+                            flatten: false,
+                            projectName: env.JOB_NAME,
+                            selector: [$class: 'SpecificBuildSelector',
+                            buildNumber: '${BUILD_NUMBER}'],
+                        target: './'])
+                }
+            }
+            else if (filename.startsWith('stash:')) {
+                // release artifacts
+                filename = filename.split(":")
+                filename = filename[1].trim()
+                dir (".pf-${plainStageName}/report_artifacts") {
+                    unstash name: filename
                 }
             }
         }
@@ -259,10 +246,10 @@ def exec(stageName) {
             creds.add(credBD)
         }
         withCredentials(creds) {
-            def underSD = "-e RT_OA"
+            def underSD = "-e OA"
             def buildUrl = env.BUILD_URL.split('/')[2].split(':')[0]
             if (buildUrl.indexOf("-infra") > 0) {
-                underSD = "-e RT_SD"
+                underSD = "-e SD"
             }
             def pyCmd = "${pythonExec} $WORKSPACE/.pf-all/pipeline_scripts/release.py -r .pf-all -f $configPath -w .pf-${plainStageName} -j $WORKSPACE $underSD"
             if (isUnix()) {
@@ -277,33 +264,8 @@ def exec(stageName) {
             archiveArtifacts artifacts: "coverity*.pdf", allowEmptyArchive: true
             archiveArtifacts artifacts: "coverity*.xml", allowEmptyArchive: true
         }
-
-        // parse URFRESULT, save env.PIPELINE_AS_CODE_URF_ID
-        def SMSURFId = 0
-        def fpURF = readFile(file: 'URFRESULT')
-        def lines = fpURF.readLines()
-        lines.each { line ->
-            if (line.indexOf("sms_id") >= 0) {
-                def firstColon = line.indexOf(":")
-                def jsonURF = line.substring(firstColon + 1, line.length())
-                try {
-                    def jsonObject = readJSON text: jsonURF
-                    if (jsonObject["msg"] == "Success") {
-                        SMSURFId = jsonObject["sms_id"].toInteger()
-                    }
-                    else {
-                        print "URF error message: ${jsonObject.msg}"
-                    }
-                }
-                catch (e) {
-                }
-            }
-        }
-        env.PIPELINE_AS_CODE_URF_ID = SMSURFId
-        env.PIPELINE_AS_CODE_URF_INFO = plainStageName
-        print "SMS URF ID: ${SMSURFId}"
-        if (SMSURFId == 0) {
-            error("${vars.stageName}: URF failed")
+        dir (".pf-${plainStageName}") {
+            utils.exportEnv()
         }
     }
 }

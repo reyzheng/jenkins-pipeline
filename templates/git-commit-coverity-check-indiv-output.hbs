@@ -1,0 +1,20 @@
+### Strict YAML Output Format (Must Be YAML-Compliant)
+GPT must output the results in the following **strict YAML format**:
+```yaml
+analysis:
+  introduce_new_defects:
+    - description: "Briefly describe the defect introduced (if any)."
+      type: "e.g., null pointer dereference, uninitialized variable, memory leak, etc."
+      risk: "Describe the potential impact of the defect."
+      location: "Provide the exact line number(s) from 'File Content'."
+  notes: "Additional comments or observations about the patch."
+
+corrected_file:
+  file: "{{path}}"
+  content: |
+    {% if no_changes_needed %}
+    No changes necessary.
+    {% else %}
+    "Provide the **full corrected file content**, with every original line intact—**no placeholders, no omissions, no summaries.**"
+    {% endif %}
+```

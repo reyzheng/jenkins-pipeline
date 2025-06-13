@@ -1,0 +1,38 @@
+size: [400,600]
+
+variables:
+  graphite: &graphite '#2A363B'
+  pastel_purple: &pastel_purple '#9B25BE'
+  pastel_blue: &pastel_blue '#2596be'
+  pastel_green: &pastel_green '#99B898'
+  pastel_yellow: &pastel_yellow '#FECEA8'
+  pastel_orange: &pastel_orange '#FF847C'
+  pastel_red: &pastel_red '#E84A5F'
+
+style:
+  text-fill: 'lightgrey'
+  background: *graphite
+  fill: '#99B898'
+  stroke: *graphite
+  stroke-width: 1
+  text-stroke: 'black'
+  text-stroke-width: 0
+  font-type: 'Helvetica'
+  break-type: '~'
+  break-size: 100
+
+areas:
+- area:
+    title: 'Full Memory Map'
+    #start: 4194480
+    #range: [4194480, 4194540]
+    #pos: [ 100, 50 ]
+    #size: [100, 800]
+    sections:
+    - names: [ .rodata ]
+      style:
+        fill: *pastel_red
+    - names: [ .text ]
+      style:
+        fill: *pastel_green
+      flags: break

@@ -1,6 +1,9 @@
 def init(stageName) {
     def defaultConfigs = [
         display_name: "URF-SFTP",
+        enable: true,
+        operation: "DOWNLOAD",
+        auto_zipunzip: false,
         dst: "",
         credentials: "",
         archive: false,
@@ -19,9 +22,9 @@ def func(stageName) {
         utils.pyExec(configs["actionName"], configs["stageName"], "", [])
     }
 
-    dir (configs["dst"]) {
-        if (configs["archive"]) {
-            archiveArtifacts artifacts: "**"
+    if (configs["operation"] == "DOWNLOAD" && configs["archive"]) {
+        dir (configs["dst"]) {
+            archiveArtifacts artifacts: "**", allowEmptyArchive: true
         }
     }
 }

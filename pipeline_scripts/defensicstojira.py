@@ -4,11 +4,11 @@ import os, logging, glob
 import subprocess as sb
 import utils, jira
 
-def parseReport(failuremode, maxDefectsCount, noDefect):
+def parseReport(workDir, failuremode, maxDefectsCount, noDefect):
     maxDefectsCount = int(maxDefectsCount)
     noDefect = int(noDefect)
 
-    fp = open('parsed.html', 'r')
+    fp = open(os.path.join(workDir, 'parsed.html'), 'r')
     lines = fp.readlines()
     fp.close()
 
@@ -59,7 +59,7 @@ def parseReport(failuremode, maxDefectsCount, noDefect):
         css = ""
         defectsCounts = dict()
         if maxDefectsCount > 0 and defectsCount > maxDefectsCount:
-            utils.heavyLogging('parseReport: too many defects')
+            utils.heavyLogging('parseReport: too many defects {}({})'.format(defectsCount, maxDefectsCount))
         elif defectsCount > 0:
             for line in lines:
                 if line.startswith("<style type"):
@@ -105,7 +105,7 @@ def parseReport(failuremode, maxDefectsCount, noDefect):
                             else:
                                 foundHead = False
                                 htmlFileName = "case-" + testCaseNumber + ".html"
-                                htmlFile = open(htmlFileName, 'w')
+                                htmlFile = open(os.path.join(workDir, htmlFileName), 'w')
                                 htmlFile.write("<head>")
                                 htmlFile.write(css)
                                 htmlFile.write("</style></head>")
@@ -124,30 +124,17 @@ def parseReport(failuremode, maxDefectsCount, noDefect):
             return item[1]["count"]
         defectsCounts = sorted(defectsCounts.items(), key=get_relevant_counts, reverse=True)
         utils.heavyLogging(json.dumps(defectsCounts, sort_keys=True, indent=2))
-    with open("result.json", "w") as outfile:
+    with open(os.path.join(workDir, 'result.json'), "w") as outfile:
         json.dump(parseResult, outfile)
 
 def defensicsToJIRA(configs):
-    pwd = os.getcwd()
-    os.chdir(configs['WORK_DIR'])
-
-    jira.getKeyFields(configs['jira_site_name'], '')
-    jira.getEPICKey(configs['jira_site_name'], configs['defensics_jira_project'], configs['issue_epic'])
-
-    with open('epicLinkField.json') as f:
-        field = json.load(f)
-    epicLinkFieldId = field['id']
-    with open('epicKey.json') as f:
-        epicKey = json.load(f)
-    jiraEPICkey = epicKey['key']
-    
-    fpParsed = open('parsed.html', 'w')
+    fpParsed = open(os.path.join(configs['WORK_DIR'], 'parsed.html'), 'w')
     cmdSed = sb.Popen(['sed', 's/</\\n</g', configs['defensics_report_path']], stdout=fpParsed)
     cmdSed.wait()
     fpParsed.close()
 
-    parseReport(configs['failure_mode'], configs['max_defects'], configs['specified_defect'])
-    with open('result.json') as f:
+    parseReport(configs['WORK_DIR'], configs['failure_mode'], configs['max_defects'], configs['specified_defect'])
+    with open(os.path.join(configs['WORK_DIR'], 'result.json')) as f:
         jsonObject = json.load(f)
     # The label contains spaces which is invalid
     testSuite = jsonObject['testsuite'].replace(' ', '_')
@@ -164,45 +151,46 @@ def defensicsToJIRA(configs):
         issue['fields']['project']['key'] = configs['defensics_jira_project']
         issue['fields']['summary'] = projectName
         issue['fields']['description'] = '{}, total defects {}'.format(projectName, defectsCount)
-        issue['fields'][epicLinkFieldId] = jiraEPICkey
         issue['fields']['labels'] = configs['issue_label']
+        issue['fields']['labels'].append(testSuite)
+        issue['fields']['labels'].append('PROJECT:{}'.format(configs['issue_epic']))
         issue['fields']['issuetype'] = dict()
         issue['fields']['issuetype']['name'] = 'Issue'
-        with open('issueToCreate.json', 'w') as fp:
+        with open(os.path.join(configs['WORK_DIR'], 'issueToCreate.json'), 'w') as fp:
             json.dump(issue, fp)
-        jira.jiraCreateIssue(configs['jira_site_name'], 'issueToCreate.json', 'createResult.json')
+        jira.jiraCreateIssue(configs['jira_site_name'], os.path.join(configs['WORK_DIR'], 'issueToCreate.json'), os.path.join(configs['WORK_DIR'], 'createResult.json'))
 
-        fpIssueResult = open('createResult.json')
+        fpIssueResult = open(os.path.join(configs['WORK_DIR'], 'createResult.json'))
         jsonIssueResult = json.load(fpIssueResult)
         fpIssueResult.close()
         if 'errors' in jsonIssueResult:
             # create issue failed
             utils.heavyLogging('defensicsToJIRA: create issue {} failed'.format(issue['fields']['summary']))
         else:
-            # create issue failed
+            # create issue success
             utils.heavyLogging('defensicsToJIRA: create issue {} success'.format(issue['fields']['summary']))
             jira.jiraUploadAttachment(configs['jira_site_name'], jsonIssueResult['key'], configs['defensics_report_path'])
     elif defectsCount > 0:
-        files = glob.glob('case-*.html')
+        files = glob.glob(os.path.join(configs['WORK_DIR'], 'case-*.html'))
         for file in files:
-            attachmentPath = file['path']
-            #def attachmentTokens = attachmentPath.split(/\.|\-/)
-            attachmentTokens = attachmentPath.split('\.|\-')
+            attachmentPath = file
+            attachmentTokens = re.split('\.|\-', os.path.basename(attachmentPath))
             testCase = attachmentTokens[1]
             issue = dict()
             issue['fields'] = dict()
             issue['fields']['project'] = dict()
             issue['fields']['project']['key'] = configs['defensics_jira_project']
             issue['fields']['summary'] = '{} - {}'.format(projectName, testCase)
-            issue['fields'][epicLinkFieldId] = jiraEPICkey
             issue['fields']['labels'] = configs['issue_label']
+            issue['fields']['labels'].append(testSuite)
+            issue['fields']['labels'].append('PROJECT:{}'.format(configs['issue_epic']))
             issue['fields']['issuetype'] = dict()
             issue['fields']['issuetype']['name'] = 'Issue'
-            with open('issueToCreate.json', 'w') as fp:
+            with open(os.path.join(configs['WORK_DIR'], 'issueToCreate.json'), 'w') as fp:
                 json.dump(issue, fp)
-            jira.jiraCreateIssue(configs['jira_site_name'], 'issueToCreate.json', 'createResult.json')
+            jira.jiraCreateIssue(configs['jira_site_name'], os.path.join(configs['WORK_DIR'], 'issueToCreate.json'), os.path.join(configs['WORK_DIR'], 'createResult.json'))
 
-            fpIssueResult = open('createResult.json')
+            fpIssueResult = open(os.path.join(configs['WORK_DIR'], 'createResult.json'))
             jsonIssueResult = json.load(fpIssueResult)
             fpIssueResult.close()
             if 'errors' in jsonIssueResult:
@@ -212,8 +200,6 @@ def defensicsToJIRA(configs):
                 # create issue failed
                 utils.heavyLogging('defensicsToJIRA: create issue {} success'.format(issue['fields']['summary']))
                 jira.jiraUploadAttachment(configs['jira_site_name'], jsonIssueResult['key'], attachmentPath)
-
-    os.chdir(pwd)
 
 def main(argv):
     if "JIRA_TOKEN" not in os.environ:
@@ -236,7 +222,7 @@ def main(argv):
 
     if os.path.isdir(workDir) == False:
         os.makedirs(workDir)
-    logging.basicConfig(filename=os.path.join(workDir, 'defensicstojira.log'), level=logging.DEBUG, filemode='w')
+    logging.basicConfig(filename=os.path.join(workDir, 'defensicstojira.log'), format='%(asctime)s %(levelname)-8s %(message)s', level=logging.DEBUG, filemode='w')
     utils.translateConfig(configFile)
     configs = utils.loadConfigs(configFile)
     configs['WORK_DIR'] = workDir

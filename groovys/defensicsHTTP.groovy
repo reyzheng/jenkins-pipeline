@@ -16,9 +16,9 @@ def init(stageName) {
     def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
 
-    if (config.settings.url != "") {
-        print "check defensics availability on ${config.settings.url}"
-        def curlCmd = "curl --insecure -H 'Authorization: Bearer ${config.settings.api_token}' ${config.settings.url}/api/v2/version"
+    if (config.url != "") {
+        print "check defensics availability on ${config.url}"
+        def curlCmd = "curl --insecure -H 'Authorization: Bearer ${config.api_token}' ${config.url}/api/v2/version"
         def status = sh script: curlCmd, returnStdout: true
         try {
             def json = readJSON text: status
@@ -29,9 +29,9 @@ def init(stageName) {
         }
     }
 
-    if (config.settings.test_suite == "80211ap" || config.settings.test_suite == "80211c") {
+    if (config.test_suite == "80211ap" || config.test_suite == "80211c") {
         // check fuzzbox availability
-        def testScript = "sshpass -p ${config.settings.fuzzbox_password} ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${config.settings.fuzzbox_account}@${config.settings.fuzzbox_ip} 'exit 0'"
+        def testScript = "sshpass -p ${config.fuzzbox_password} ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${config.fuzzbox_account}@${config.fuzzbox_ip} 'exit 0'"
         def statusCode = sh script:testScript, returnStatus:true
         if (statusCode != 0) {
             error("Invalid fuzzobx configuration")
@@ -39,7 +39,7 @@ def init(stageName) {
     }
 
     dir (env.PF_PATH + 'scripts') {
-        stash name: "stash-${stageName}-setfile", includes: config.settings.set_file
+        stash name: "stash-${stageName}-setfile", includes: config.set_file
     }
 
     return config
@@ -247,9 +247,9 @@ def exportReport(baseUrl, apiToken, resultId) {
     archiveArtifacts artifacts: "defensics-summary.html"
 }
 
-def startTest(configs, preloads) {
+def startTest(configs) {
     def resultId = "0"
-    def stageName = preloads.stageName
+    def stageName = configs.stageName
     def baseUrl = configs.url + "/api/v2"
     dir (".pf-defensics") {
         def loadingStatus = false
@@ -336,18 +336,8 @@ def startTest(configs, preloads) {
     //}
 }
 
-def func(pipelineAsCode, configs, preloads) {
-    startTest(configs, preloads)
-    /*
-    if (configs.node == "" || env.NODE_NAME == configs.node) {
-        startTest(configs, preloads)
-    }
-    else {
-        node(configs.node) {
-            startTest(configs, preloads)
-        }
-    }
-    */
+def func(pipelineAsCode, configs) {
+    startTest(configs)
 }
 
 return this

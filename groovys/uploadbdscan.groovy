@@ -1,48 +1,45 @@
 def init(stageName) {
     def defaultConfigs = [
         display_name: "",
+        enable: true,
         blackduck_url: "https://blackduck.rtkbf.com",
         blackduck_token_credential: "",
         scanfiles: []
     ]
 
-    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(pipelineAsCode, vars, preloads) {
-    dir("uploadbdscan") {
-        // get Rest API BearerToken
-        def bearerToken
-        def curlCommand
-        withCredentials([string(credentialsId: vars.blackduck_token_credential, variable: 'TOKEN')]) {
-            curlCommand = "curl --insecure -X POST ${vars.blackduck_url}/api/tokens/authenticate -H \"Authorization: token $TOKEN\" -H \"cache-control: no-cache\""
-            def jsonBearerToken = sh(script: curlCommand, returnStdout: true)
-            def jsonObjBearerToken = readJSON text: jsonBearerToken
-            bearerToken = jsonObjBearerToken["bearerToken"]
+def func(stageName) {
+    def vars = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
 
-            for (def i=0; i<vars.scanfiles.size(); i++) {
-                def scanFile = vars.scanfiles[i]
-                if (scanFile.startsWith("artifacts:")) {
-                    scanFile = scanFile.split(":")
-                    scanFile = scanFile[1].trim()
-                    copyArtifacts filter: scanFile, projectName: env.JOB_NAME, selector: specific(env.BUILD_NUMBER)
-                    def bdioFiles = findFiles(glob: '**.bdio')
-                    for (def bdioFile in bdioFiles) {
-                        curlCommand = "curl --insecure -X POST ${vars.blackduck_url}/api/scan/data -F \"file=@${bdioFile}\" -H \"Authorization: Bearer ${bearerToken}\""
-                        sh curlCommand
-                    }
-                }
-                else {
-                    curlCommand = "curl --insecure -X POST ${vars.blackduck_url}/api/scan/data -F \"file=@${scanFile}\" -H \"Authorization: Bearer ${bearerToken}\""
-                    sh curlCommand
+    if (vas["enable"] == false) {
+        print "Skip stage ${stageName}"
+        return
+    }
+
+    dir (".pf-${plainStageName}") {
+        def morefiles = []
+        for (def i=0; i<vars["scanfiles"].size(); i++) {
+            def scanFile = vars["scanfiles"][i]
+            if (scanFile.startsWith("artifacts:")) {
+                scanFile = scanFile.split(":")
+                scanFile = scanFile[1].trim()
+                copyArtifacts filter: scanFile, projectName: env.JOB_NAME, selector: specific(env.BUILD_NUMBER)
+                def bdioFiles = findFiles(glob: '**.bdio')
+                for (def bdioFile in bdioFiles) {
+                    morefiles.add(bdioFile)
                 }
             }
         }
-
-        deleteDir()
+        vars["morefiles"] = morefiles
+    }
+    writeJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json", json: vars
+    withCredentials([string(credentialsId: vars["blackduck_token_credential"], variable: "BD_TOKEN")]) {
+        utils.pyExec(vars["actionName"], vars["stageName"], "", [])
     }
 }
 

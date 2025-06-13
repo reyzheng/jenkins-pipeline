@@ -1,0 +1,28 @@
+### Strict YAML Output Format:
+GPT must strictly follow this fixed YAML format:
+```yaml
+analysis:
+  introduce_new_defects:
+    - description: "Briefly describe the defect introduced (if any)."
+      type: "e.g., null pointer dereference, uninitialized variable, memory leak, etc."
+      risk: "Describe the potential impact of the defect."
+      location: "Provide the exact line number(s) from 'Function Context' and 'Patch Content'."
+  suggested_patch:
+    - file: "{{path}}"
+      modification:
+        lines: "Specify the affected line numbers from 'Function Context' and 'Patch Content'."
+        code: |
+          "Provide the corrected code changes."
+      reasoning: "Explain why these changes are necessary."
+  notes: "Additional comments or observations about the patch."
+
+final_patch:
+  {{#if has_modifications}}
+  - file: "{{path}}"
+    diff: |
+      "Provide the refined patch **as a git diff comparing it to the original 'Patch Content'**."
+      "Ensure line numbers match those in 'Function Context' and 'Patch Content'."
+  {{else}}
+  note: "No changes necessary."
+  {{/if}}
+```

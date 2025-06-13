@@ -1,34 +1,35 @@
 import json
 import sys, getopt
-import os, logging
+import os, logging, glob
 import subprocess as sb
 import utils
 
-def getGroupId(apiKey, groupName):
+def getGroupId(apiKey, configs):
     cmdCurl = sb.Popen(['curl', '-s', '-k', '-X', 'GET', '--url', \
                         'https://bdba.rtkbf.com/api/groups/', \
                         '-H', 'Authorization: Bearer {}'.format(apiKey), \
-                        '-H', 'Accept: application/json', '-o', 'bdbaGroups.json'], stdout=sb.PIPE)
+                        '-H', 'Accept: application/json', '-o', os.path.join(configs['WORK_DIR'], 'bdbaGroups.json')], stdout=sb.PIPE)
     cmdCurl.wait()
-
-    fpJSON = open('bdbaGroups.json')
+    fpJSON = open(os.path.join(configs['WORK_DIR'], 'bdbaGroups.json'))
     bdbaGroups = json.load(fpJSON)
     fpJSON.close()
-
+    if 'groups' not in bdbaGroups:
+        utils.heavyLogging('getGroupId: invalid bdba group {}'.format(configs['group']))
+        sys.exit(-1)
     for group in bdbaGroups['groups']:
-       if group['name'] == groupName:
+       if group['name'] == configs['group']:
            return group['id']
 
     return 0
 
-def uploadFile(apiKey, groupId, file):
+def uploadFile(apiKey, groupId, file, workDir):
     cmdCurl = sb.Popen(['curl', '-s', '-k', '-X', 'PUT', \
                         '-T', file, '--url', 'https://bdba.rtkbf.com/api/upload/', \
                         '-H', 'Authorization: Bearer {}'.format(apiKey), \
-                        '-H', 'Group: {}'.format(groupId), '-o', 'bdbaUpload-{}.json'.format(os.path.basename(file))], stdout=sb.PIPE)
+                        '-H', 'Group: {}'.format(groupId), '-o', os.path.join(workDir, 'bdbaUpload-{}.json'.format(os.path.basename(file)))], stdout=sb.PIPE)
     cmdCurl.wait()
 
-    fpJSON = open('bdbaUpload-{}.json'.format(os.path.basename(file)))
+    fpJSON = open(os.path.join(workDir, 'bdbaUpload-{}.json'.format(os.path.basename(file))))
     bdbaUpload = json.load(fpJSON)
     fpJSON.close()
 
@@ -39,18 +40,17 @@ def uploadFile(apiKey, groupId, file):
 
 def bdbaScan(configs):
     pwd = os.getcwd()
-    os.chdir(configs['WORK_DIR'])
-    groupId = getGroupId(os.getenv('BDBA_TOKEN'), configs['group'])
+    groupId = getGroupId(os.getenv('BDBA_TOKEN'), configs)
     if groupId == 0:
         utils.heavyLogging('bdbaScan: invalid group name {}'.format(configs['group']))
         return
     else:
-        for file in configs['files']:
-            os.chdir(pwd)
-            file = os.path.abspath(file)
-            print('bdbaScan: upload {} to group {}({})'.format(file, configs['group'], groupId))
-            os.chdir(configs['WORK_DIR'])
-            uploadFile(os.getenv('BDBA_TOKEN'), groupId, file)
+        for filepattern in configs['files']:
+            utils.heavyLogging('bdbaScan: check pattern {}'.format(filepattern))
+            files = glob.glob(filepattern)
+            for file in files:
+                utils.heavyLogging('bdbaScan: upload {} to group {}({})'.format(file, configs['group'], groupId))
+                uploadFile(os.getenv('BDBA_TOKEN'), groupId, file, configs['WORK_DIR'])
 
 def main(argv):
     if "BDBA_TOKEN" not in os.environ:
@@ -58,6 +58,7 @@ def main(argv):
 
     workDir = ''
     configFile = ''
+    skipTranslate = False
     try:
         opts, args = getopt.getopt(argv[1:], 'w:f:vs', ["work_dir=", "config=", "version", "skip_translate"])
     except getopt.GetoptError:
@@ -75,11 +76,12 @@ def main(argv):
                 os.makedirs(value)
             workDir = value
 
-    logging.basicConfig(filename=os.path.join(workDir, 'bdba.log'), level=logging.DEBUG, filemode='w')
-    # TODO: check utils.loadConfigs
+    logging.basicConfig(filename=os.path.join(workDir, 'bdba.log'), format='%(asctime)s %(levelname)-8s %(message)s', level=logging.DEBUG, filemode='w')
+    if skipTranslate == False:
+        utils.translateConfig(configFile)
     configs = utils.loadConfigs(configFile)
     if configs['enabled'] == False:
-        print('Skip')
+        print('main: skip bdba')
         sys.exit(0)
     configs['WORK_DIR'] = workDir
     bdbaScan(configs)

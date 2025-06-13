@@ -1,18 +1,20 @@
 def init(stageName) {
     def defaultConfigs = [
+        display_name: "gitpatch",
         source_dir: "",
         patch_file: "",
         scriptableParams: []
     ]
 
-    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
-    utils.stashScriptedParamScripts(config.settings)
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(configs) {
+def func(stageName) {
+    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
+
     if (env.GERRIT_EVENT_TYPE == "ref-updated") {
         dir (configs.source_dir) {
             def patchfile

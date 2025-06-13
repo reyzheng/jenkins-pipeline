@@ -1,6 +1,4 @@
 def init() {
-    def utils = load "utils.groovy"
-
     def defaultConfigs = [
         post_scripts_condition: [],
         post_scripts_type: [],
@@ -9,6 +7,7 @@ def init() {
         mail_conditions: ["always"],
         mail_subject: "",
         mail_body: "",
+        mail_attachment: "",
         mail_recipient: ""
     ]
 
@@ -21,69 +20,135 @@ def init() {
     else {
         config = utils.commonInit("global", defaultConfigs)
     }
-    config.preloads.actionName = "post"
-    def ite
-    for (ite=0; ite<config.settings.post_scripts_type.size(); ite++) {
-        if (config.settings.post_scripts_type[ite].trim() == "") {
-            continue
-        }
-        if (config.settings.post_scripts_type[ite] == "inline" || 
-            config.settings.post_scripts_type[ite] == "action") {
-        }
-        else {
-            dir (env.PF_PATH + 'scripts') {
-                stash name: "pf-post-scripts-${ite}", includes: config.settings.post_scripts[ite]
-            }
-        }
-    }
-    // load email body
-    if (config.settings.mail_body.trim() != "") {
-        dir (env.PF_PATH + 'scripts') {
-            stash name: "pf-post-mail-body", includes: config.settings.mail_body
-        }
-    }
+    utils.finalizeInit("post", config)
 
     return config
 }
 
-def execute(pipelineAsCode, postConfig, i) {
-    if (postConfig.post_scripts_type[i] == "inline") {
-        if (isUnix() == true) {
-            sh postConfig.post_scripts[i]
-        }
-        else {
-            bat postConfig.post_scripts[i]
-        }
-    }
-    else if (postConfig.post_scripts_type[i] == "action") {
-        unstash name: "stash-script-utils"
-        def utils = load "utils.groovy"
-
-        def actionName = postConfig.post_scripts[i]
-        def action = utils.loadAction(actionName)
-        action.func(pipelineAsCode, pipelineAsCode.configs[actionName].settings, pipelineAsCode.configs[actionName].preloads)
-    }
-    else {
-        unstash name: "pf-post-scripts-${i}"
-        def dstFile = postConfig.post_scripts[i]
-        
-        if (postConfig.post_scripts_type[i] == "source") {
-            sh ". " + dstFile
-        }
-        else if (postConfig.post_scripts_type[i] == "groovy") {
-            def externalMethod = load(dstFile)
-            externalMethod.func()
-        }
-        else if (postConfig.post_scripts_type[i] == "file") {
-            if (isUnix() == true) {
-                sh "sh '${dstFile}'"
+def sendEmail(postConfig) {
+    if (postConfig.mail_enabled == true) {
+        def emailbody = """${currentBuild.result}: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]':
+                        Check console output at ${env.BUILD_URL}"""
+        if (postConfig["mail_body"] != "") {
+            if (postConfig["mail_body"].endsWith('.html')) {
+                emailbody = readFile postConfig["mail_body"]
             }
             else {
-                // rename to .bat for windows batch
-                bat "move /y \"$dstFile\" \"${dstFile}.bat\""
-                bat "\"${dstFile}.bat\""
+                def isGroovyScript = fileExists "${env.PF_ROOT}/scripts/${postConfig['mail_body']}"
+                if (isGroovyScript == true) {
+                    def externalMailMethod = load("${env.PF_ROOT}/scripts/${postConfig['mail_body']}")
+                    emailbody = externalMailMethod.func()
+                }
+                else {
+                    emailbody = postConfig["mail_body"]
+                }
             }
         }
+
+        def mailSubject = postConfig.mail_subject
+        if (postConfig.mail_subject == "") {
+            mailSubject = "${currentBuild.result}: Job '${env.JOB_NAME} [Build ${env.BUILD_NUMBER}]'"
+        }
+        if (postConfig["mail_body"].endsWith('.html')) {
+            print "sendEmail: HTML email ${postConfig['mail_body']}"
+            emailext (
+                subject: mailSubject,
+                attachmentsPattern: postConfig["mail_attachment"],
+                body: emailbody,
+                to: "${postConfig.mail_recipient}",
+                mimeType: 'text/html'
+            )
+        }
+        else {
+            emailext (
+                subject: mailSubject,
+                attachmentsPattern: postConfig["mail_attachment"],
+                body: emailbody,
+                to: "${postConfig.mail_recipient}"
+                //recipientProviders: [[$class: 'DevelopersRecipientProvider']]
+            )
+        }
+    }
+}
+
+def execute(pipelineAsCode, postStatus) {
+    // export .pf_build_info
+    def hasBuildInfo = fileExists ".pf_build_info"
+    if (hasBuildInfo == true) {
+        def fpBuildIndo = readFile ".pf_build_info"
+        def buildInfoLines = fpBuildIndo.readLines()
+        for (buildInfoLine in buildInfoLines) {
+            if (buildInfoLine != "") {
+                def tokens = buildInfoLine.split("=")
+                if (tokens[0] == "BUILD_NAME") {
+                    currentBuild.displayName = tokens[1]
+                    print "set currentBuild.displayName ${tokens[1]}"
+                }
+                else if (tokens[0] == "BUILD_DESCRIPTION") {
+                    currentBuild.description = tokens[1]
+                    print "set currentBuild.description ${tokens[1]}"
+                }
+            }
+        }
+    }
+
+    env.PF_POST_STAGE = "1"
+    def underUnix = isUnix()
+    def pythonExec = utils.getPython()
+    def translateCmd = "${pythonExec} ${env.PF_ROOT}/pipeline_scripts/utils.py -f ${env.PF_ROOT}/settings/post_config.json -c TRANSLATE_CONFIG"
+    if (underUnix) {
+        sh translateCmd
+    }
+    else {
+        bat translateCmd
+    }
+
+    def postConfig = readJSON file: "${env.PF_ROOT}/settings/post_config.json"
+    //print "post execute: ${postStatus}"
+    for (def i=0; i<postConfig["post_scripts_condition"].size(); i++) {
+        if (postConfig["post_scripts_condition"][i].indexOf(postStatus) < 0) {
+            print "skip post condition ${postStatus}"
+            continue
+        }
+        if (postConfig.post_scripts_type[i] == "inline") {
+            utils.inlineScript(postConfig.post_scripts[i], underUnix, "")
+        }
+        else if (postConfig.post_scripts_type[i] == "action") {
+            def coreAction = true
+            def stageName = postConfig["post_scripts"][i]
+            def actionName = utils.extractActionName(stageName)
+            def action
+            try {
+                print "post: load core action ${actionName}"
+                action = utils.loadCoreAction(env.PF_ROOT, actionName)
+            }
+            catch (e) {
+                print "post: load user action ${actionName}"
+                coreAction = false
+                action = utils.loadUserAction(env.PF_ROOT, actionName)
+            }
+            // TODO:
+            // coreAction: action.func(stageName)
+            // userAction: action.func() or action.func(modules, stageConfig, stagePreloads)
+            if (coreAction == true) {
+                action.func(stageName)
+            }
+            else {
+                try {
+                    action.func(pipelineAsCode, pipelineAsCode.configs[actionName])
+                }
+                catch (e) {
+                    action.func()
+                }
+            }
+        }
+        else {
+            utils.fileScript(underUnix, postConfig.post_scripts_type[i], postConfig.post_scripts[i], "", "", ".pf-post")
+        }
+    }
+
+    if (postConfig["mail_conditions"].contains(postStatus)) {
+        sendEmail(postConfig)
     }
 }
 

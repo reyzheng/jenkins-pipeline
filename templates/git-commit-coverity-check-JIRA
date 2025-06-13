@@ -1,0 +1,4 @@
+Gerrit patch: $GERRIT_URL
+Jenkins build: $BUILD_URL
+Refined code:
+$PATCHES

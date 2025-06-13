@@ -1,0 +1,66 @@
+# Prompt-formatted version of git-commit-coverity-check.hbs + git-commit-coverity-check-PATCH
+# Useful for ChatGPT refinement
+
+{{#each files}}
+File: {{path}}
+Function Context (including line number, if applicable):
+- This section contains the **function name** along with its **starting line number** in the original file.
+- If this section is **empty**, it means the patch represents an **"Added" operation** (i.e., a new file is introduced).
+```
+{{function with line number}}
+```
+Patch Content:
+- Apply the following patch to the provided function context (or treat it as a new function if "Function Context" is empty).
+```
+{{patch}}
+```
+{{/each}}
+
+#### Security and Code Quality Analysis
+Analyze the function after applying the patch and identify potential **security vulnerabilities** or **code quality issues**. Follow these guidelines:
+1. Apply the Patch: Modify the given "Function Context" by applying the changes from "Patch Content." If the function context is empty, assume it is a newly added function.
+2. Security and Quality Check:
+- Evaluate the modified function for potential security vulnerabilities such as:
+  - **Memory corruption issues** (buffer overflows, use-after-free, double free, etc.).
+  - **Injection vulnerabilities** (SQL injection, command injection, etc.).
+  - **Privilege escalation risks** (insecure access controls, improper authentication).
+  - **Denial-of-service risks** (infinite loops, excessive resource consumption).
+  - **Race conditions** (TOCTOU vulnerabilities, concurrent execution issues).
+- If defects are found, describe their **type, location (line number if possible)**, and **potential risks**.
+3. Refined Patch Generation:
+- If defects are found, suggest modifications to eliminate them.
+- **Try your best to extract and use the exact line numbers from both "Function Context" and "Patch Content"** when generating the final_patch.
+- **Ensure that both "suggested_patch" and "final_patch" include the correct file path from the "File: " section** to provide clear context for modifications.
+- **The final_patch must be a diff-style patch (git diff format) that compares the refined patch against the original "Patch Content" section** so that differences are clearly visible.
+- If **no defects are found in any of the patches**, explicitly state: **"No changes necessary."**
+
+---
+
+### Strict YAML Output Format:
+GPT must strictly follow this fixed YAML format:
+```yaml
+analysis:
+  introduce_new_defects:
+    - description: "Briefly describe the defect introduced (if any)."
+      type: "e.g., null pointer dereference, uninitialized variable, memory leak, etc."
+      risk: "Describe the potential impact of the defect."
+      location: "Provide the exact line number(s) from 'Function Context' and 'Patch Content'."
+  suggested_patch:
+    - file: "{{path}}"
+      modification:
+        lines: "Specify the affected line numbers from 'Function Context' and 'Patch Content'."
+        code: |
+          "Provide the corrected code changes."
+      reasoning: "Explain why these changes are necessary."
+  notes: "Additional comments or observations about the patch."
+
+final_patch:
+  {{#if has_modifications}}
+  - file: "{{path}}"
+    diff: |
+      "Provide the refined patch **as a git diff comparing it to the original 'Patch Content'**."
+      "Ensure line numbers match those in 'Function Context' and 'Patch Content'."
+  {{else}}
+  note: "No changes necessary."
+  {{/if}}
+```

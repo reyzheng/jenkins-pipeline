@@ -3,6 +3,7 @@ def init(stageName) {
         enabled: true,
         repo_path: "repo",
         display_name: "",
+        export_diff_result: false,
         scm_counts: 1,
         scm_types: ["git"],
         scm_urls: [""],
@@ -14,6 +15,7 @@ def init(stageName) {
         scm_git_submodules: [false],
         scm_git_recursivesubmodules: [false],
         scm_git_honor_refspec: [false],
+        scm_git_reference: [""],
         scm_repo_manifest_files: ["default.xml"],
         scm_repo_manifest_groups: [""],
         scm_repo_manifest_currentbranchs: [true],
@@ -21,27 +23,18 @@ def init(stageName) {
         scm_repo_manifest_depths: [1],
         scm_repo_manifest_platforms: ["linux"],
         scm_repo_reference: [""],
-        scm_repo_mirror: [""],
-
-        scriptableParams: ["scm_dsts", "scm_branchs", "scm_repo_manifest_files"]
+        scm_repo_mirror: [""]
     ]
 
     def config = utils.commonInit(stageName, defaultConfigs)
-    dir("groovys") {
-        stash name: "stash-actions-git", includes: "git.groovy"
-        stash name: "stash-actions-repo", includes: "repo.groovy"
-    }
-    dir("pipeline_scripts") {
-        stash name: "git-checkout-parent", includes: "git-checkout-parent.sh"
-        stash name: "git-label-submodules", includes: "git-label-submodules.sh"
-    }
-    if (env.PF_MAIN_SOURCE_NAME) {
-        env.PF_MAIN_SOURCE_NAME += ",${stageName}"
-        env.PF_MAIN_SOURCE_PLAINNAME += ",${config.preloads.plainStageName}"
-    }
-    else {
-        env.PF_MAIN_SOURCE_NAME = stageName
-        env.PF_MAIN_SOURCE_PLAINNAME = config.preloads.plainStageName
+    for (def i=0; i<config.scm_counts; i++) {
+        def scmDst = config.scm_dsts[i]
+        if (env.PF_SOURCE_DSTS) {
+            env.PF_SOURCE_DSTS += ",${scmDst}"
+        }
+        else {
+            env.PF_SOURCE_DSTS = scmDst
+        }
     }
     utils.finalizeInit(stageName, config)
 
@@ -49,231 +42,91 @@ def init(stageName) {
 }
 
 def scm_checkout(vars, i) {
-    unstash name: "stash-script-utils"
-    def utils = load "utils.groovy"
-    def url = utils.captureStdout("echo ${vars.scm_urls[i]}", isUnix())
-    vars.scm_urls[i] = url[0]
-    
     echo "checkout repository ${vars.scm_types[i]} ${vars.scm_urls[i]}"
-    if (vars.scm_types[i] == "git") {
-        if (vars.scm_branchs[i] == "") {
-            if (vars.scm_refspecs[i] == "") {
-                vars.scm_branchs[i] = "master"
-            }
-            else {
-                vars.scm_branchs[i] = "FETCH_HEAD" 
-            }
-        }
 
-        def gitConfigs = [
-            display_name: "",
-            enabled: true,
-            url: "",
-            branch: "master",
-            dst: "",
-            credentials: "",
-            refspecs: "",
-            honor_refspec: false,
-            clone_depth: 0,
-            submodules: false,
-            preserve: false
-        ]
-
-        gitConfigs.dst = vars.scm_dsts[i]
-        gitConfigs.preserve = env.PF_PRESERVE_SOURCE
-        gitConfigs.url = vars.scm_urls[i]
-        gitConfigs.branch = vars.scm_branchs[i]
-        gitConfigs.credentials = vars.scm_credentials[i]
-        if (gitConfigs.credentials == "") {
-            if (env.PF_GERRIT_CREDENTIALS) {
-                gitConfigs.credentials = env.PF_GERRIT_CREDENTIALS
-            }
-        }
-        env.PF_GERRIT_CREDENTIALS_MAIN = gitConfigs.credentials
-        // later added vars
-        if (vars.scm_refspecs[i]) {
-            gitConfigs.refspecs = vars.scm_refspecs[i]
-        }
-        if (vars["scm_git_submodules"][i]) {
-            gitConfigs["submodules"] = vars["scm_git_submodules"][i]
-        }
-        if (vars["scm_git_recursivesubmodules"][i]) {
-            gitConfigs["recursivesubmodules"] = vars["scm_git_recursivesubmodules"][i]
-        }
-        if (vars.scm_git_clone_depth[i]) {
-            gitConfigs.clone_depth = vars.scm_git_clone_depth[i]
-        }
-        if (vars.scm_git_honor_refspec[i]) {
-            gitConfigs.honor_refspec = vars.scm_git_honor_refspec[i]
-        }
-        def varname
-        if (env.BUILD_BRANCH) {
-            varname = "${env.BUILD_BRANCH}_SOURCE_DIR${i}"
-        }
-        else {
-            varname = "SOURCE_DIR${i}"
-        }
-        env."${varname}" = "${WORKSPACE}/${gitConfigs.dst}"
-        dir ('.pf-source') {
-            writeJSON file: '.pf-gitconfig', json: gitConfigs
-            if (env.BUILD_BRANCH) {
-                stash name: "stash-git-config-${env.BUILD_BRANCH}", includes: ".pf-gitconfig"
-            }
-            else {
-                stash name: "stash-git-config", includes: ".pf-gitconfig"
-            }
-        }
-        def action = utils.loadAction("git")
-        action.func("git")
-
-        // get revision number for URF
-        def revision
-        dir (vars.scm_dsts[i]) {
-            if (isUnix() == true) {
-                revision = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-            }
-            else {
-                def stdout = bat(script: "git rev-parse HEAD", returnStdout: true).trim()
-                revision = stdout.readLines().drop(1).join(" ")       
-            }
-        }
-
-        // revision info for URF SBOM
-        if (env.PF_SOURCE_REVISION) {
-            dir (".pf-source") {
-                def jsonGitInfo
-                def hasGitInfo = fileExists '.pf-revision-info'
-                if (hasGitInfo == true) {
-                    jsonGitInfo = readJSON file: '.pf-revision-info'
-                }
-                else {
-                    jsonGitInfo = [:]
-                    jsonGitInfo.sources = []
-                }
-                def jsonSource = [:]
-                def urlTokens = utils.parseUrl(gitConfigs.url)
-                jsonSource.addr = urlTokens[0].toString()
-                jsonSource.name = urlTokens[1].toString()
-                jsonSource.path = vars.scm_dsts[i]
-                jsonSource.revision = revision
-                jsonSource.upstream = gitConfigs.branch
-                print "Got repo info(git): " + jsonSource
-                jsonGitInfo.sources << jsonSource
-
-                writeJSON file: '.pf-revision-info', json: jsonGitInfo
-                def stashName = 'pf-revision-info'
-                if (env.BUILD_BRANCH) {
-                    stashName += "-${env.BUILD_BRANCH}"
-                }
-                stash name: stashName, includes: '.pf-revision-info'
-            }
-        }
-    }
-    else if (vars.scm_types[i] == "repo") {
-        if (vars.scm_branchs[i] == "") {
-            vars.scm_branchs[i] = "master" 
-        }
-
-        def repoPath = vars.repo_path
-        def repoGroup = ""
-        try {
-            repoGroup = vars.scm_repo_manifest_groups[i]
-        }
-        catch(e) {
-            // scm_repo_manifest_groups not configured
-        }
-        def repoConfig = [:]
-        def repoMirror = ""
-        repoConfig.repo_path = repoPath
-        repoConfig.scm_credentials = vars.scm_credentials[i]
-        env.PF_GERRIT_CREDENTIALS_MAIN = repoConfig.scm_credentials
-        repoConfig.scm_repo_manifest_platforms = vars.scm_repo_manifest_platforms[i]
-        repoConfig.scm_branchs = vars.scm_branchs[i]
-        repoConfig.scm_repo_manifest_files = vars.scm_repo_manifest_files[i]
-        repoConfig.scm_urls = vars.scm_urls[i]
-        repoConfig.scm_repo_manifest_notags = vars.scm_repo_manifest_notags[i]
-        repoConfig.scm_repo_manifest_currentbranchs = vars.scm_repo_manifest_currentbranchs[i]
-        repoConfig.scm_repo_manifest_depths = vars.scm_repo_manifest_depths[i]
-        repoConfig.scm_repo_manifest_groups = repoGroup
-        try {
-            repoConfig.scm_repo_manifest_groups = vars.scm_repo_manifest_groups[i]
-        }
-        catch (e) {
-            // scm_repo_manifest_groups not defined
-        }
-        try {
-            repoConfig.scm_repo_reference = vars.scm_repo_reference[i]
-        }
-        catch (e) {
-            // scm_repo_reference not defined
-        }
-        try {
-            repoMirror = vars.scm_repo_mirror[i]
-        }
-        catch (e) {
-            // scm_repo_mirror not defined
-        }
-        repoConfig.scm_repo_mirror = repoMirror
-        repoConfig.scm_dst = vars.scm_dsts[i]
-        repoConfig.preserve = env.PF_PRESERVE_SOURCE
-
-        def action = utils.loadAction("repo")
-        action.call(repoConfig, vars["plainStageName"])
-
-        // revision info for URF SBOM
-        if (env.PF_SOURCE_REVISION) {
-            if (isUnix() == true && repoConfig.scm_repo_mirror == "") {
-                // repo manifest is only available under non-mirror mode
-                def manifest
-                dir (repoConfig.scm_dst) {
-                    manifest = sh(script: "${repoPath} manifest -r", returnStdout: true).trim()
-                }
-                dir (".pf-source") {
-                    writeFile file: '.pf-revision-info', text: manifest
-                    def  stashName = 'pf-revision-info'
-                    if (env.BUILD_BRANCH) {
-                        stashName += "-${env.BUILD_BRANCH}"
-                    }
-                    stash name: stashName, includes: '.pf-revision-info'
-                    print "Got repo info(manifest): ${manifest}"
-                }
-            }
-        }
+    //if (env.PF_BUILD_ENV.startsWith("slurm:")) {
+    if (1 == 2) {
+        // TODO: slurm on-going
+        utils.pyExec(vars["actionName"], vars["stageName"], "CHECK_OUT", ['-i', i])
     }
     else {
-        echo "skip scm_checkout"
+        def plainStageName = vars["plainStageName"]
+        def scmConfigs
+        dir (".pf-${plainStageName}") {
+            scmConfigs = readJSON file: "source-${i}-config.json"
+        }
+        if (vars.scm_types[i] == "git") {
+            def action = utils.loadCoreAction(env.PF_ROOT, "git")
+            action.func(scmConfigs)
+        }
+        else if (vars.scm_types[i] == "repo") {
+            def action = utils.loadCoreAction(env.PF_ROOT, "repo")
+            action.call(scmConfigs, vars["plainStageName"])
+        }
+        else if (vars.scm_types[i] == "svn") {
+            checkout([
+                $class: 'SubversionSCM',
+                additionalCredentials: [],
+                excludedCommitMessages: '',
+                excludedRegions: '',
+                excludedRevprop: '',
+                excludedUsers: '',
+                filterChangelog: false,
+                ignoreDirPropChanges: false,
+                includedRegions: '',
+                locations: [[
+                    cancelProcessOnExternalsFail: true,
+                    credentialsId: vars.scm_credentials[i],
+                    depthOption: 'infinity',
+                    ignoreExternalsOption: true,
+                    local: vars.scm_dsts[i],
+                    remote: vars.scm_urls[i]
+                ]],
+                quietOperation: false,
+                workspaceUpdater: [$class: 'UpdateUpdater']
+            ])
+        }
+        else {
+            echo "skip scm_checkout"
+        }
+    }
+
+    utils.pyExec(vars["actionName"], vars["stageName"], "REVISION_INFO", ['-i', i])
+    if (vars["export_diff_result"] == true) {
+        // calculate diff files
+        utils.pyExec(vars["actionName"], vars["stageName"], "DIFF_FILES", ['-i', i])
     }
 }
 
 def func(stageName) {
-    def stageConfigs = readJSON file: ".pf-all/settings/${stageName}_config.json"
+    def stageConfigs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def plainStageName = stageConfigs["plainStageName"]
 
     print "Running on " + env.NODE_NAME
     if (stageConfigs["enabled"] == false) {
         return
     }
-
-    dir (".pf-source") {
-        print "source: clean .pf-source"
-        deleteDir()
-    }
-
-    utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "KNOWN_HOSTS", [])
-    // ${stageName}_config.json would be translated after KNOWN_HOSTS
-    // a temporal workaround, could remove after totally to py
+    utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "TRANSLATE_CONFIG", [])
     stageConfigs = readJSON file: ".pf-all/settings/${stageName}_config.json"
+    utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "INIT_WORKDIR", [])
+    utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "PARSE_CONFIG", [])
     for (def i=0; i<stageConfigs["scm_counts"]; i++) {
         // skip, if empty url
         if (stageConfigs["scm_urls"][i] == "") {
             return 
         }
-
-        env."PF_SOURCE_DST_${i}" = ""
-        if (stageConfigs["scm_dsts"].size() > i) {
-            env."PF_SOURCE_DST_${i}" = stageConfigs["scm_dsts"][i]
-        }
         scm_checkout(stageConfigs, i)
+    }
+    utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "SAVE_ENV", [])
+
+    utils.exportEnvVar("PF_SOURCE_WORKDIR", ".pf-${plainStageName}")
+    dir (".pf-${plainStageName}") {
+        def stashName = 'pf-revision-info'
+        if (env.BUILD_BRANCH) {
+            stashName += "-${env.BUILD_BRANCH}"
+        }
+        stash name: stashName, includes: '.pf-revision-info'
+        utils.exportEnv()
     }
 }
 

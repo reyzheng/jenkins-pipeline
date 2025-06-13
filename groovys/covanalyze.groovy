@@ -14,7 +14,7 @@ def init(stageName) {
         coverity_project: "",
         coverity_stream: "",
         coverity_snapshot: 0,
-        coverity_build_dir: ".pf-covconfig/build",
+        coverity_build_dir: ".pf-covbuild",
         coverity_build_root: "",
 
         scriptableParams: ["coverity_project", "coverity_stream"]
@@ -22,11 +22,11 @@ def init(stageName) {
 
     def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
-    if (config["settings"]["coverity_analyze_defects_options"] == "") {
-        config["settings"]["coverity_analyze_defects_options"] = [:]
+    if (config["coverity_analyze_defects_options"] == "") {
+        config["coverity_analyze_defects_options"] = [:]
     }
     else {
-        config["settings"]["coverity_analyze_defects_options"] = readJSON text: config["settings"]["coverity_analyze_defects_options"]
+        config["coverity_analyze_defects_options"] = readJSON text: config["coverity_analyze_defects_options"]
     }
     utils.finalizeInit(stageName, config)
 
@@ -55,6 +55,10 @@ def func(stageName) {
     }
     else {
         archiveArtifacts artifacts: 'preview-report-committer.json'
+    }
+    dir (".pf-${plainStageName}") {
+        // export environment variables generated in py
+        utils.exportEnv()
     }
 }
 

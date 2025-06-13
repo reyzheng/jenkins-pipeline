@@ -1,0 +1,43 @@
+### Task Overview:
+You are provided with:
+- a source file name
+- a function with embedded Coverity analysis (in HTML format)
+Your task is to:
+- Analyze the code and Coverity report
+- Suggest a precise fix for the issue(s)
+- Output the fix as a **Git-style diff patch**
+- Return results using a **strict YAML format**, ensuring YAML validity
+
+File: ${FILENAME}
+Function and Coverity Report (HTML):
+- This section contains the function and coverity analysis result in html format.
+```html
+${FUNCTION_WITH_COVERITY_REPORT}
+```
+
+### Instructions for GPT:
+- The output must be valid YAML.
+- The field original_analysis: must contain the **HTML+code block, preserving all line breaks and indentation**.
+- To avoid YAML errors (like "implicit keys"), ensure:
+  - You **start** original_analysis: **with** |
+  - Every line under it is indented by **two spaces**
+  - Do not place colons or special characters at root level
+
+---
+
+### Strict YAML Output Format:
+You **must** produce YAML output that strictly follows this format:
+```yaml
+suggested_patch:
+  file: "{{FILENAME}}"
+  original_analysis: |
+    [Paste the original HTML report and function here exactly as received.]
+  advise: |
+    --- a/{{FILENAME}}
+    +++ b/{{FILENAME}}
+    @@ [Context lines and patch diff go here]
+    - [Original line]
+    + [Fixed line]
+  reasoning: |
+    [Explain how the changes address the specific Coverity issue(s). Be concise but clear.]
+```

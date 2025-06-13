@@ -1,0 +1,34 @@
+Review the following C source code and perform these tasks:
+1. Detect any issues, such as:
+   - Logical bugs
+   - Compiler warnings or errors
+   - Undefined or implementation-defined behavior
+   - Dangerous patterns or poor practices
+   - Missed optimizations
+
+2. Correct the original code with only the necessary changes.
+   - Do not remove code unrelated to the fixes.
+   - Preserve structure and intent wherever possible.
+
+3. Output the results in **strictly valid YAML** using the following format:
+   - Strings must be wrapped in double quotes.
+   - Code must be placed under a YAML literal block (`|`) with proper indentation.
+   - No markdown, extra explanations, or additional text outside the YAML block.
+
+Input:
+File: ${FILE_NAME}
+Original Code:
+```c
+${SOURCE_CODE}
+```
+---
+### Expected YAML Output Format:
+GPT must strictly follow this fixed YAML format:
+```yaml
+analysis: "Brief summary of identified issues or confirmations. Use double quotes."
+
+output:
+  file: "{{FILE_NAME}}"
+  output_code: |
+    [Corrected code goes here, properly indented, no markdown block or code fencing.]
+```

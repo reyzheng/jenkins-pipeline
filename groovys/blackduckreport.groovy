@@ -3,6 +3,8 @@ def init(stageName) {
         display_name: "",
         blackduckreport_projects: [],
         blackduckreport_versions: [],
+        sms_token: "",
+        release_urf_user: "",
         blackduckreport_token_credential: "",
         blackduckreport_dst: "bd/report",
 
@@ -10,8 +12,8 @@ def init(stageName) {
     ]
 
     def mapConfig = utils.commonInit(stageName, defaultConfigs)
-    if (mapConfig["settings"]["blackduckreport_token_credential"] == "") {
-        mapConfig["settings"]["blackduckreport_token_credential"] = env.PF_BD_CREDENTIALS
+    if (mapConfig["blackduckreport_token_credential"] == "") {
+        mapConfig["blackduckreport_token_credential"] = env.PF_BD_CREDENTIALS
     }
     utils.finalizeInit(stageName, mapConfig)
 
@@ -24,7 +26,14 @@ def func(stageName) {
 
     def stageConfig = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def pyCmd = "${pythonExec} ${env.PF_ROOT}/pipeline_scripts/bdreport.py -f ${env.PF_ROOT}/settings/${stageName}_config.json -w .pf-${plainStageName} -j $WORKSPACE"
-    withCredentials([string(credentialsId: stageConfig["blackduckreport_token_credential"], variable: 'BD_TOKEN')]) {
+    def creds = []
+    if (stageConfig["sms_token"] != "") {
+        creds = [string(credentialsId: stageConfig["sms_token"], variable: 'SMS_TOKEN')]
+    }
+    else {
+        creds = [string(credentialsId: stageConfig["blackduckreport_token_credential"], variable: 'BD_TOKEN')]
+    }
+    withCredentials(creds) {
         if (isUnix()) {
             sh pyCmd
         }

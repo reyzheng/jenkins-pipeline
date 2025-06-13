@@ -4,7 +4,7 @@ import getopt, sys
 import os, glob, logging
 import subprocess as sb
 import datetime
-import utils, covreport
+import utils, covreport, covoperations, git, coverityapi
 
 WORK_DIR = '.pf-covanalyze'
 BLAME_PATH_PATTERN = dict()
@@ -21,6 +21,7 @@ def defectsScissors():
     fpHuge = open('defects.json', 'r')
     checkerProperties = False
     cid = ""
+    appendCheckerProperties = False
     
     if not os.path.exists("cids"):
         os.mkdir("cids")
@@ -32,81 +33,107 @@ def defectsScissors():
         # Get next line from file
         line = fpHuge.readline().strip()
         if line.startswith('"stateOnServer"'):
-            count = 0
-            while True:
-                stateOnServer = fpHuge.readline().strip()
-                if stateOnServer.startswith('"cid"'):
-                    tokens = re.split(',|:| ', stateOnServer)
-                    # found new CID
-                    # write current CID to file
-                    cid = tokens[3]
-                    #print("found cid {}".format(cid))
-                    defectInfo = dict()
-                    defectInfo[cid] = dict()
-                elif stateOnServer.startswith('"classification"'):
-                    tokens = re.split(',|:|\"', stateOnServer)
-                    if 'triage' not in defectInfo[cid]:
-                        defectInfo[cid]['triage'] = dict()
-                    defectInfo[cid]['triage']['classification'] = tokens[4]
-                elif stateOnServer.startswith('"action"'):
-                    tokens = re.split(',|:|\"', stateOnServer)
-                    if 'triage' not in defectInfo[cid]:
-                        defectInfo[cid]['triage'] = dict()
-                    defectInfo[cid]['triage']['action'] = tokens[4]
-                elif stateOnServer.startswith('"components"'):
+            if 'null' in line:
+                # "stateOnServer" : null
+                pass
+            else:
+                # create new defectInfo
+                appendCheckerProperties = True
+                count = 0
+                while True:
                     stateOnServer = fpHuge.readline().strip()
-                    tokens = re.split(',|:|\"', stateOnServer)
-                    #components.append(tokens[1])
-                    defectInfo[cid]["components"] = []
-                    defectInfo[cid]["components"].append(tokens[1])
-                    break
-                count = count + 1
-                if count > 100:
-                    print("Error parsing stateOnServer")
-                    break
+                    if stateOnServer.startswith('"cid"'):
+                        tokens = re.split(',|:| ', stateOnServer)
+                        # found new CID
+                        # write current CID to file
+                        cid = tokens[3]
+                        #print("found cid {}".format(cid))
+                        defectInfo = dict()
+                        defectInfo[cid] = dict()
+                    elif stateOnServer.startswith('"classification"'):
+                        tokens = re.split(',|:|\"', stateOnServer)
+                        if 'triage' not in defectInfo[cid]:
+                            defectInfo[cid]['triage'] = dict()
+                        defectInfo[cid]['triage']['classification'] = tokens[4]
+                    elif stateOnServer.startswith('"action"'):
+                        tokens = re.split(',|:|\"', stateOnServer)
+                        if 'triage' not in defectInfo[cid]:
+                            defectInfo[cid]['triage'] = dict()
+                        defectInfo[cid]['triage']['action'] = tokens[4]
+                    elif stateOnServer.startswith('"components"'):
+                        stateOnServer = fpHuge.readline().strip()
+                        tokens = re.split(',|:|\"', stateOnServer)
+                        #components.append(tokens[1])
+                        defectInfo[cid]["components"] = []
+                        defectInfo[cid]["components"].append(tokens[1])
+                        break
+                    count = count + 1
+                    if count > 100:
+                        print("Error parsing stateOnServer")
+                        break
         elif line.startswith('"checkerProperties"'):
-            count = 0
-            while True:
-                checkerProperties = fpHuge.readline().strip()
-                if checkerProperties.startswith('"category"'):
-                    tokens = re.split(':', checkerProperties)
-                    category = tokens[1].strip()[1:-2]
-                elif checkerProperties.startswith('"impact"'):
-                    tokens = re.split(',|:| |\"', checkerProperties)
-                    impact = tokens[6]
-                elif checkerProperties.startswith('"subcategoryShortDescription"'):
-                    tokens = re.split(':', checkerProperties)
-                    subcategoryShortDescription = tokens[1].strip()[1:-2]
-    
-                    defectInfo[cid]["events"] = eventArray
-                    defectInfo[cid]["impact"] = impact
-                    defectInfo[cid]["category"] = category
-                    defectInfo[cid]["subcategoryShortDescription"] = subcategoryShortDescription
-    
-                    filePath = "./cids/{}.txt".format(cid)
-                    checkFile = os.path.isfile(filePath)
-                    if checkFile == True:
-                        with open(filePath) as existedFile:
-                            refInfo = json.load(existedFile)
-                        defectInfo[cid]["events"] += refInfo[cid]["events"]
-                    fpSliced = open(filePath, 'w')
-                    defectInfo[cid]["events"] = defectInfo[cid]["events"][:MAX_EVENTS]
-                    fpSliced.write(json.dumps(defectInfo))
-                    fpSliced.close()
-                    defectInfo = dict()
-                    break
-                count = count + 1
-                if count > 100:
-                    print("Error parsing checkerProperties")
-                    break
+            if appendCheckerProperties == True:
+                # appendCheckerProperties == True: previous "stateOnServer" section is valid
+                appendCheckerProperties = False
+                count = 0
+                while True:
+                    checkerProperties = fpHuge.readline().strip()
+                    if checkerProperties.startswith('"category"'):
+                        tokens = re.split(':', checkerProperties)
+                        category = tokens[1].strip()[1:-2]
+                    elif checkerProperties.startswith('"impact"'):
+                        tokens = re.split(',|:| |\"', checkerProperties)
+                        impact = tokens[6]
+                    elif checkerProperties.startswith('"subcategoryShortDescription"'):
+                        subcategoryShortDescription = checkerProperties[checkerProperties.index(':') + 3:-2]
+
+                        defectInfo[cid]['events'] = eventArray
+                        defectInfo[cid]['impact'] = impact
+                        defectInfo[cid]['mergeKey'] = mergeKey
+                        defectInfo[cid]['checkerName'] = checkerName
+                        defectInfo[cid]['category'] = category
+                        defectInfo[cid]['subcategoryShortDescription'] = subcategoryShortDescription
+
+                        filePath = "./cids/{}.txt".format(cid)
+                        checkFile = os.path.isfile(filePath)
+                        if checkFile == True:
+                            with open(filePath) as existedFile:
+                                refInfo = json.load(existedFile)
+                            defectInfo[cid]["events"] += refInfo[cid]["events"]
+                        fpSliced = open(filePath, 'w')
+                        defectInfo[cid]["events"] = defectInfo[cid]["events"][:MAX_EVENTS]
+                        fpSliced.write(json.dumps(defectInfo))
+                        fpSliced.close()
+                        defectInfo = dict()
+                        break
+                    count = count + 1
+                    if count > 100:
+                        print("Error parsing checkerProperties")
+                        break
         elif line.startswith('"mainEventFilePathname"'):
             eventArray = []
             eventDict = dict()
+            eventDict["filePathname"] = line[line.index(':') + 3:-2]
+        elif line.startswith('"mergeKey"'):
             tokens = re.split(',|:| |\"', line)
-            eventDict["filePathname"] = tokens[6]
+            tokens = list(filter(None, tokens))
+            mergeKey = tokens[1]
+        elif line.startswith('"checkerName"'):
+            tokens = re.split(',|:| |\"', line)
+            tokens = list(filter(None, tokens))
+            checkerName = tokens[1]
         elif line.startswith('"mainEventLineNumber"'):
             tokens = re.split(',|:| |\"', line)
-            eventDict["lineNumber"] = tokens[5]
+            eventDict['lineNumber'] = tokens[5]
+            utils.heavyLogging("defectsScissors: mainEventLineNumber {}".format(eventDict['lineNumber']))
+        elif line.startswith('"eventDescription"'):
+            mainEventDescription = line[line.index(':') + 3:-2]
+        elif line.startswith('"lineNumber"'):
+            eventLine = line[line.index(':') + 2:-1]
+            utils.heavyLogging("defectsScissors: test event line {}".format(eventLine))
+            if 'lineNumber' in eventDict and eventLine == eventDict['lineNumber']:
+                utils.heavyLogging("defectsScissors: mainEventDescription {}".format(mainEventDescription))
+                eventDict['description'] = mainEventDescription
         elif line.startswith('"functionDisplayName"'):
             tokens = re.split(',|:| |\"', line)
             eventDict["functionDisplayName"] = tokens[6]
@@ -189,45 +216,75 @@ def defectsScissors():
     fpAllM.close()
     fpAllL.close()
 
-def cvssReportScissors():
+def checkAnalyzeOption(configs, opt):
+    hasCVSSOption = False
+    analyzeOptions = configs["coverity_analyze_defects_options"]
+    for analyzeOption in analyzeOptions:
+        for subOption in analyzeOption:
+            if subOption == opt:
+                hasCVSSOption = True
+    return hasCVSSOption
+
+def cvssReportScissors(configs):
     global rawCidInfos
+    hasCVSSOption = checkAnalyzeOption(configs, 'cvss')
+    hasSeverityOption = checkAnalyzeOption(configs, 'severity')
     # cvss
-    with open('cvssreport.json') as f:
-        data = json.load(f)
-    with open(os.path.join(covanalzyeCfgs['coverity_build_root'], 'preview_report_v2.json')) as fRef:
-        dataRef = json.load(fRef)
-    for defectInfo in data['defectInfoList']:
-        cid = 0
-        mergeKey = defectInfo['mergeKey']
-        for issueInfo in dataRef['issueInfo']:
-            if issueInfo['mergeKey'] == mergeKey:
-                cid = issueInfo['cid']
-        #cid = defectInfo['optCid']['value']
-        cvssSeverity = defectInfo['cvssSeverity']
-        cid = str(cid)
-        if cid in rawCidInfos:
-            pass
-        elif cid != '0':
-            rawCidInfos[cid] = dict()
-        if cid != '0':
-            rawCidInfos[cid]["cvss"] = cvssSeverity
+    if hasCVSSOption == True:
+        if not os.path.isfile('cvssreport.json'):
+            utils.heavyLogging('cvssReportScissors: cvss report not exists')
+            sys.exit(1)
+        with open('cvssreport.json') as f:
+            data = json.load(f)
+        previewReportPath = 'preview_report_v2.json'
+        if 'basePhase' in configs and configs['basePhase'] == True:
+            previewReportPath = 'preview_report_v2_parent.json'
+        with open(os.path.join(covanalzyeCfgs['coverity_build_root'], previewReportPath)) as fRef:
+            dataRef = json.load(fRef)
+        for defectInfo in data['defectInfoList']:
+            cid = 0
+            mergeKey = defectInfo['mergeKey']
+            for issueInfo in dataRef['issueInfo']:
+                if issueInfo['mergeKey'] == mergeKey:
+                    cid = issueInfo['cid']
+            #cid = defectInfo['optCid']['value']
+            cvssSeverity = defectInfo['cvssSeverity']
+            cid = str(cid)
+            if cid in rawCidInfos:
+                pass
+            elif cid != '0':
+                rawCidInfos[cid] = dict()
+            if cid != '0':
+                rawCidInfos[cid]['cvss'] = cvssSeverity
+    else:
+        utils.heavyLogging('cvssReportScissors: ignore cvssSeverity value, all Medium')
+        for key in rawCidInfos:
+            rawCidInfos[key]['cvss'] = 'Medium'
     # severity
-    fpSeverity = open('severity.csv', 'r')
-    while True:
-        # Get next line from file
-        line = fpSeverity.readline()
-        if not line:
-            break
-        if line.startswith("CID") == False:
-            columns = line.split(",")
-            cid = columns[0].strip()
-            # ensure columns[0] is exactly a cid
-            if len(cid) > 0 and cid[:1].isdigit() == True:
-                if cid in rawCidInfos:
-                    pass
-                else:
-                    rawCidInfos[cid] = dict()
-                rawCidInfos[cid]["severity"] = columns[3].strip()
+    if hasSeverityOption == True:
+        if not os.path.isfile('severity.csv'):
+            utils.heavyLogging('cvssReportScissors: severity report not exists')
+            sys.exit(1)
+        fpSeverity = open('severity.csv', 'r')
+        while True:
+            # Get next line from file
+            line = fpSeverity.readline()
+            if not line:
+                break
+            if line.startswith("CID") == False:
+                columns = line.split(",")
+                cid = columns[0].strip()
+                # ensure columns[0] is exactly a cid
+                if len(cid) > 0 and cid[:1].isdigit() == True:
+                    if cid in rawCidInfos:
+                        pass
+                    else:
+                        rawCidInfos[cid] = dict()
+                    rawCidInfos[cid]["severity"] = columns[3].strip()
+    else:
+        utils.heavyLogging('cvssReportScissors: ignore severity value, all ""')
+        for key in rawCidInfos:
+            rawCidInfos[key]['severity'] = ''
     with open("cvssreport_.json", "w") as outfile:
         json.dump(rawCidInfos, outfile)
 
@@ -248,8 +305,8 @@ def analyzeCoverityIssues(analyzeOption):
     for subOption in analyzeOption:
         logging.debug('analyzeCoverityIssues: subOption {}'.format(subOption))
         subcids = []
-        if subOption.startswith("impact"):
-            impacts = subOption.split(":")
+        if subOption.startswith('impact'):
+            impacts = subOption.split(':')
             impactLevel = impacts[1]
             logging.debug('analyzeCoverityIssues: impact {}'.format(impactLevel))
             with open('defects{}_.json'.format(impactLevel)) as json_file:
@@ -257,6 +314,15 @@ def analyzeCoverityIssues(analyzeOption):
             for defectKey in defects:
                 logging.debug('analyzeCoverityIssues: add {}'.format(defectKey))
                 subcids.append(defectKey)
+        elif subOption.startswith('checker'):
+            chckers = subOption.split(':')
+            checker = chckers[1]
+            with open('defects_.json') as json_file:
+                defects = json.load(json_file)
+            for defectKey in defects:
+                if defects[defectKey]['checkerName'] == checker:
+                    subcids.append(defectKey)
+                    break
         elif subOption == "owasp":
             logging.debug('analyzeCoverityIssues: owasp')
             for cidKey in rawCidInfos:
@@ -269,21 +335,139 @@ def analyzeCoverityIssues(analyzeOption):
                 if rawCidInfos[cidKey]["cwe"] == True:
                     logging.debug('analyzeCoverityIssues: add {}'.format(cidKey))
                     subcids.append(cidKey)
-        elif subOption == "cvss":
+        elif subOption == 'cvss':
             logging.debug('analyzeCoverityIssues: cvss')
             for cidKey in rawCidInfos:
                 # TODO: CID in cvssreport.json only, not found in preview_report_v2.json
-                if 'cvss' in rawCidInfos[cidKey] and (rawCidInfos[cidKey]["cvss"] == "Critical" or rawCidInfos[cidKey]["cvss"] == "High"):
+                if 'cvss' in rawCidInfos[cidKey] and (rawCidInfos[cidKey]['cvss'] == "Critical" or rawCidInfos[cidKey]['cvss'] == "High"):
                     logging.debug('analyzeCoverityIssues: add {}'.format(cidKey))
                     subcids.append(cidKey)
         elif subOption == "severity":
             logging.debug('analyzeCoverityIssues: severity')
             for cidKey in rawCidInfos:
-                if rawCidInfos[cidKey]["severity"] == "Very High" or rawCidInfos[cidKey]["severity"] == "High":
-                    logging.debug('analyzeCoverityIssues: add {}'.format(cidKey))
-                    subcids.append(cidKey)
+                try:
+                    if rawCidInfos[cidKey]["severity"] == "Very High" or rawCidInfos[cidKey]["severity"] == "High":
+                        logging.debug('analyzeCoverityIssues: add {}'.format(cidKey))
+                        subcids.append(cidKey)
+                except:
+                    utils.lightLogging('analyzeCoverityIssues: KeyError {}'.format(cidKey))
         cids = intersectCids(cids, subcids)
     return cids
+
+def getExcludeCIDsFromSnapshot(covuser, covkey, snapshot):
+    global WORK_DIR
+    global covanalzyeCfgs
+
+    utils.heavyLogging('getExcludeCIDsFromSnapshot: snapshot, {}'.format(snapshot))
+    if snapshot == '':
+        sys.exit(1)
+    excludes = []
+    offset = 0
+    totalRows = 1000000
+    while totalRows > 0:
+        outputResult = os.path.join(WORK_DIR, 'queryCoverityIssuesOutput-{}.json'.format(snapshot))
+        inputFile = os.path.join(WORK_DIR, 'queryCoverityIssuesInput-{}.json'.format(snapshot))
+        # TODO: review, not reviewed
+        matcher = dict()
+        matcher['class'] = 'Project'
+        matcher['name'] = covanalzyeCfgs['coverity_project']
+        matcher['type'] = 'nameMatcher'
+        filter = dict()
+        filter['columnKey'] = 'project'
+        filter['matchMode'] = 'oneOrMoreMatch'
+        filter['matchers'] = [matcher]
+        input = dict()
+        input['filters'] = [filter]
+        input['columns'] = ["cid"]
+        input['snapshotScope'] = dict()
+        input['snapshotScope']['show'] = dict()
+        input['snapshotScope']['show']['scope'] = snapshot
+        with open(inputFile, 'w') as outfile:
+            json.dump(input, outfile)
+        coverityapi.queryCoverityIssues(covuser, covkey, \
+                                        'http://{}:{}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"]), \
+                                        offset, inputFile, outputResult)
+        fpSnapshot = open(outputResult)
+        jsonSnapShot = json.load(fpSnapshot)
+        fpSnapshot.close()
+        if offset == 0:
+            totalRows = jsonSnapShot['totalRows']
+            for row in jsonSnapShot['rows']:
+                excludes.append(row[0]['value'])
+        else:
+            for row in jsonSnapShot['rows']:
+                excludes.append(row[0]['value'])
+        offset = offset + 200
+        totalRows = totalRows - 200
+    return excludes
+
+def getExcludeCIDs(covuser, covkey, stream):
+    global covanalzyeCfgs
+    excludeCIDs = []
+    fileExcludeCIDs = os.path.join(os.getenv('WORKSPACE'), os.getenv('PF_ROOT'), 'scripts', 'excludeCIDs')
+    rules = dict()
+    # case 1: cids in excludeCIDs line by line
+    # case 2: from specific snapshot
+    if os.path.isfile(fileExcludeCIDs):
+        fpExcludeCIDs = open(fileExcludeCIDs, 'r')
+        while True:
+            line = fpExcludeCIDs.readline()
+            if not line:
+                break
+            if line.startswith('snapshot:'):
+                # snapshot:env:${ENV_NAME}, ex. snapshot:env:COV_SNAPSHOT_PARENT
+                # snapshot:COV_STREAM_ROOT
+                tokens = line.split(':')
+                if tokens[1].strip() == 'env':
+                    utils.heavyLogging('getExcludeCIDs: got snapshot from env.')
+                    snapshot = utils.getEnv(tokens[2].strip())
+                    if snapshot == '':
+                        utils.heavyLogging('getExcludeCIDs: error, invalid snapshot')
+                        sys.exit(1)
+                elif tokens[1].strip() == 'COV_STREAM_ROOT':
+                    # query the oldest snapshot
+                    utils.heavyLogging('getExcludeCIDs: got snapshot from oldest snapshot({})'.format(stream))
+                    coverityapi.queryCoverityStreamSnapshots(covuser, covkey, \
+                                                                'http://{}:{}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"]), \
+                                                                stream, 'streamSnapshots.json')
+                    fpSnapshot = open('streamSnapshots.json')
+                    jsonSnapShots = json.load(fpSnapshot)
+                    fpSnapshot.close()
+                    if 'snapshotsForStream' in jsonSnapShots and len(jsonSnapShots['snapshotsForStream']) > 0:
+                        snapshot = jsonSnapShots['snapshotsForStream'][0]['id']
+                    else:
+                        utils.heavyLogging('getExcludeCIDs: warning, init. coverity analysis')
+                        sys.exit(0)
+                excludeCIDs = getExcludeCIDsFromSnapshot(covuser, covkey, snapshot)
+                break
+            elif line.startswith('FIELD:'):
+                # FIELD:mainEventDescription:This less-than-zero comparison of an unsigned value is never true. .* < 0UL
+                # FIELD:subcategory:unsigned_compare_macros
+                tokens = line.split(':')
+                rules[tokens[1]] = tokens[2].rstrip()
+            else:
+                excludeCIDs.append(line.strip())
+        fpExcludeCIDs.close()
+    previewReportPath = 'preview_report_v2.json'
+    if 'basePhase' in covanalzyeCfgs and covanalzyeCfgs['basePhase'] == True:
+        previewReportPath = 'preview_report_v2_parent.json'
+    if len(rules) > 0:
+        fpReport = open(os.path.join(os.getenv('WORKSPACE'), previewReportPath))
+        jsonReport = json.load(fpReport)
+        fpReport.close()
+        for issue in jsonReport['issueInfo']:
+            toExclude = True
+            if len(issue['occurrences']) > 0:
+                for rule in rules:
+                    pattern = re.compile(r'{}'.format(rules[rule]))
+                    if not pattern.match(issue['occurrences'][0][rule]):
+                        toExclude = False
+                        break
+            if toExclude == True:
+                # 'cid' is int in preview_report_v2.json
+                excludeCIDs.append(str(issue['cid']))
+    utils.lightLogging('getExcludeCIDs: excludeCIDs, {}'.format(excludeCIDs))
+    return excludeCIDs
 
 # triageRule
 #     positive: include files with invalid path/author
@@ -297,129 +481,99 @@ def defectsAnalyzer(analyzeOptsSize, covuser, covkey, command, triageRule):
     with open('defects_.json') as f:
         defects = json.load(f)
     pwd = os.getcwd()
-    assignPolicy = 'author'
-    if 'coverity_defects_assign_policy' in covanalzyeCfgs and covanalzyeCfgs["coverity_defects_assign_policy"] == "component":
-        assignPolicy = 'component'
-    elif covanalzyeCfgs['coverity_analyze_rtkonly'] == True:
-        projectUrl = "http://{}:{}/api/v2/streams/{}?locale=en_us".format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"], covanalzyeCfgs["coverity_stream"])
-        cmdCurl = sb.Popen(['curl', '-s', '--location', '-X', 'GET', projectUrl, '-H', 'Content-Type: application/json', \
-                        '-H', 'Accept: application/json', '--user', '{}:{}'.format(covuser, covkey), '-o', 'streamInfo.json'], stdout=sb.PIPE)
-        cmdCurl.communicate()
+    if covanalzyeCfgs['coverity_analyze_rtkonly'] == True:
+        coverityapi.queryCoverityStream(covuser, covkey, \
+                                        'http://{}:{}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"]), \
+                                        covanalzyeCfgs['coverity_stream'], 'streamInfo.json')
         fpStreamInfo = open('streamInfo.json')
         jsonStreams = json.load(fpStreamInfo)
         fpStreamInfo.close()
         if len(jsonStreams['streams']) == 0:
-            logging.debug('Invalid coverity stream: {}'.format(covanalzyeCfgs["coverity_stream"]))
+            utils.heavyLogging('defectsAnalyzer: invalid coverity stream: {}'.format(covanalzyeCfgs["coverity_stream"]))
             return
         else:
-            logging.debug('Got triage store {} from coverity stream: {}'.format(jsonStreams['streams'][0]['triageStoreName'], covanalzyeCfgs["coverity_stream"]))
+            utils.heavyLogging('defectsAnalyzer: got triage store {} from coverity stream: {}'.format(jsonStreams['streams'][0]['triageStoreName'], covanalzyeCfgs["coverity_stream"]))
             if jsonStreams['streams'][0]['triageStoreName'] == 'Default Triage Store':
-                print('Invalid triage store: Default Triage Store')
+                utils.heavyLogging('Invalid triage store: Default Triage Store')
                 return
-            url = 'http://{}:{}/api/v2/issues/triage?locale=en_us&triageStoreName={}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"], jsonStreams['streams'][0]['triageStoreName'])
 
+    excludeCIDs = getExcludeCIDs(covuser, covkey, covanalzyeCfgs['coverity_stream'])
     for key in defects:
+        if key in excludeCIDs:
+            utils.heavyLogging('defectsAnalyzer: skip excludes {}'.format(key))
+            continue
         # tips: analyzeOptsSize == 0 -> no analyzeOptions, all defects to jira
         if analyzeOptsSize == 0 or key in cids:
-            events = defects[key]["events"]
+            events = defects[key]['events']
             foundAuthor = False
             eventIdx = 0
-            if assignPolicy == 'component':
-                foundAuthor = True
-                for event in events:
-                    event["author"] = "COMPONENT"
-                    event["committer"] = "COMPONENT"
-                    event["authorfull"] = "COMPONENT"
-                    event["committerfull"] = "COMPONENT"
-            else:
-                for event in events:
-                    event["author"] = ""
-                    event["committer"] = ""
-                    event["authorfull"] = ""
-                    event["committerfull"] = ""
-                    filePathname = event["filePathname"]
-                    lineNumber = event["lineNumber"]
-                    utils.heavyLogging('defectsAnalyzer: filepath {}, line {}'.format(filePathname, lineNumber))
-                    if os.path.islink(filePathname):
-                        utils.heavyLogging('defectsAnalyzer: The file is a softlink...')
-                        filePathname = os.path.realpath(filePathname)
-                    for pattern in BLAME_PATH_PATTERN:
-                        if re.match(pattern, filePathname):
-                            filePathname = re.sub(r'{}'.format(pattern), BLAME_PATH_PATTERN[pattern], filePathname)
-                            utils.heavyLogging('defectsAnalyzer: filepath(re.sub) {}'.format(filePathname))
-                            break
-                    dir = os.path.dirname(os.path.abspath(filePathname))
-                    filename = os.path.basename(filePathname)
-                    if os.path.isfile(filePathname) == False:
-                        msg = 'defectsAnalyzer: filepath {} does not exists, skip it'.format(filePathname)
-                        utils.heavyLogging(msg)
+            for event in events:
+                filePathname = event['filePathname']
+                dir = os.path.dirname(os.path.abspath(filePathname))
+                filename = os.path.basename(filePathname)
+                os.chdir(dir)
+                utils.lightLogging('defectsAnalyzer: chdir {}'.format(dir))
+                # Find revision
+                event['author'] = ''
+                event['committer'] = ''
+                event['authorfull'] = ''
+                event['committerfull'] = ''
+                lineNumber = event['lineNumber']
+                utils.heavyLogging('defectsAnalyzer: filepath {}, line {}'.format(filePathname, lineNumber))
+                if os.path.islink(filePathname):
+                    utils.heavyLogging('defectsAnalyzer: The file is a softlink...')
+                    filePathname = os.path.realpath(filePathname)
+                for pattern in BLAME_PATH_PATTERN:
+                    if re.match(pattern, filePathname):
+                        filePathname = re.sub(r'{}'.format(pattern), BLAME_PATH_PATTERN[pattern], filePathname)
+                        dir = os.path.dirname(os.path.abspath(filePathname))
+                        os.chdir(dir)
+                        utils.lightLogging('defectsAnalyzer: chdir(re.sub) {}'.format(dir))
+                        utils.heavyLogging('defectsAnalyzer: filepath(re.sub) {}'.format(filePathname))
+                        break
+                retFileLineRevision = git.getFileLineRevision('', filename, lineNumber)
+                event['commithash'] = retFileLineRevision['revision']
+                if os.path.isfile(filePathname) == False:
+                    msg = 'defectsAnalyzer: filepath {} does not exists, skip it'.format(filePathname)
+                    utils.heavyLogging(msg)
+                    if triageRule == 'positive':
+                        foundAuthor = True
+                    continue
+                try:
+                    # Find author
+                    ret = git.findAuthor(lineNumber, filename)
+                    if covanalzyeCfgs['coverity_analyze_rtkonly'] == True:
+                        if 'realtek' not in ret['authorfull'] and 'realsil' not in ret['authorfull'] and 'apowertec' not in ret['authorfull']:
+                            utils.lightLogging('defectsAnalyzer: skip non-rtk {}: {}\n'.format(filename, ret['authorfull']))
+                            continue
+                    event['author'] = ret['author']
+                    event['authorfull'] = ret['authorfull']
+                    if event['author'] != '':
+                        foundAuthor = True
+                    # Find committer
+                    event['committer'] = retFileLineRevision['committer']
+                    event['committerfull'] = retFileLineRevision['committerfull']
+                except Exception as e:
+                    utils.heavyLogging('defectsAnalyzer: exception {}'.format(filePathname))
+                    utils.heavyLogging(e)
+                    if event['author'] != '':
+                        event['committer'] = event['author']
+                        event['committerfull'] = event['authorfull']
+                        utils.lightLogging('author auto-assigned {}\n'.format(filePathname))
+                    else:
                         if triageRule == 'positive':
                             foundAuthor = True
-                        continue
-                    try:
-                        os.chdir(dir)
-                        # Find author
-                        # git blame -e -L ${lineNumber},${lineNumber} \"${filePathname}\"
-                        author = sb.Popen(['git', 'blame' , '-e', '-L', '{},{}'.format(lineNumber, lineNumber), filename], stdout=sb.PIPE)
-                        line = author.stdout.readline()
-                        line = line.decode("utf-8") .strip()
-                        #if "realtek" in line or "realsil" in line:
-                        if "@" in line:
-                            line = re.split('[>< ]', line)
-                            if '@' in line[2]:
-                                line = line[2]
-                            else:
-                                line = line[3]
-                            if covanalzyeCfgs["coverity_analyze_rtkonly"] == True:
-                                # TODO: trivial, realtek/realsil always in line (coverity.py->manageEmitDB())
-                                # if coverity_analyze_rtkonly == true
-                                if "realtek" not in line and "realsil" not in line:
-                                    logging.debug("skip non-rtk {}: {}\n".format(filePathname, line))
-                                    continue
-                            tokens = line.split('@')
-                            event["author"] = tokens[0]
-                            event["authorfull"] = line
-                            foundAuthor = True
-                            utils.heavyLogging("found author: {}".format(event["author"]))
                         else:
-                            utils.heavyLogging("invlid author: {}".format(filePathname))
-                            event["author"] = ""
-                        # Find committer
-                        # git log --pretty=format:%ce -u -L ${lineNumber},${lineNumber}:${filePathname}
-                        committer = sb.check_output(['git', 'log' , '--pretty=format:%ce', '-u', '-L', '{},{}:{}'.format(lineNumber, lineNumber, filename)], timeout=5)
-                        # get first line
-                        line = committer.decode('utf-8').splitlines()
-                        line = line[0].strip()
-                        #if "realtek" in line or "realsil" in line:
-                        if "@" in line:
-                            tokens = line.split('@')
-                            event["committer"] = tokens[0]
-                            event["committerfull"] = line
-                            utils.heavyLogging("found committer: {}".format(event["committer"]))
-                        else:
-                            utils.heavyLogging("invlid committer: {}\n".format(filePathname))
-                            event["committer"] = ""
-                    except Exception as e:
-                        utils.heavyLogging('defectsAnalyzer: exception {}'.format(filePathname))
-                        utils.heavyLogging(e)
-                        if event["author"] != "":
-                            event["committer"] = event["author"]
-                            event["committerfull"] = event["authorfull"]
-                            utils.lightLogging("author auto-assigned {}\n".format(filePathname))
-                        else:
-                            if triageRule == 'positive':
-                                foundAuthor = True
-                            else:
-                                foundAuthor = False
-                            utils.heavyLogging('defectsAnalyzer: empty author')
-                    eventIdx += 1
+                            foundAuthor = False
+                        utils.heavyLogging('defectsAnalyzer: empty author')
+                eventIdx += 1
             if foundAuthor == True:
                 arrAnalyzed.append(key)
                 defectsAnalyzed[key] = defects[key]
                 if key in rawCidInfos:
                     defectsAnalyzed[key]["cwe"] = rawCidInfos[key]["cwe"]
                     defectsAnalyzed[key]["owasp"] = rawCidInfos[key]["owasp"]
-                    defectsAnalyzed[key]["cvss"] = rawCidInfos[key]["cvss"]
+                    defectsAnalyzed[key]['cvss'] = rawCidInfos[key]['cvss']
                     defectsAnalyzed[key]["severity"] = rawCidInfos[key]["severity"]
             else:
                 arrIgnored.append(key)
@@ -428,7 +582,7 @@ def defectsAnalyzer(analyzeOptsSize, covuser, covkey, command, triageRule):
         json.dump(defectsAnalyzed, outfile, indent=2)
     utils.heavyLogging('defectsAnalyzer: {}'.format(os.path.abspath('defects_.json')))
     # triage OSS defects to 'Action' 'Ignore'
-    if assignPolicy != "component" and covanalzyeCfgs['coverity_analyze_rtkonly'] == True:
+    if covanalzyeCfgs['coverity_analyze_rtkonly'] == True:
         dataJson = dict()
         attributeValue = dict()
         if command == 'TRIAGE_OSS_FP':
@@ -447,14 +601,9 @@ def defectsAnalyzer(analyzeOptsSize, covuser, covkey, command, triageRule):
             logging.debug("Triage action ignore: {}".format(arrIgnored))
             with open("ignored-raw", "w") as outfile:
                 outfile.write(json.dumps(dataJson))
-            cmdCurl = sb.Popen(['curl', '-s', '--location', '-X', 'PUT', url, '-H', 'Content-Type: application/json', \
-                        '-H', 'Accept: application/json', '--user', '{}:{}'.format(covuser, covkey), '-d', '@ignored-raw'], stdout=sb.PIPE)
-            while True:
-                line = cmdCurl.stdout.readline()
-                print('Triage defects to Ignore/FP: curl {}'.format(bytes.decode(line, 'utf-8')))
-                if not line:
-                    break
-            cmdCurl.communicate()
+            coverityapi.triageCoverityIssues(covuser, covkey, \
+                                                'http://{}:{}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"]), \
+                                                jsonStreams['streams'][0]['triageStoreName'], 'ignored-raw')
         # triage to undecided
         if len(arrAnalyzed) > 0:
             if command == 'TRIAGE_OSS_FP':
@@ -467,14 +616,9 @@ def defectsAnalyzer(analyzeOptsSize, covuser, covkey, command, triageRule):
             logging.debug("Triage action undecided: {}".format(arrAnalyzed))
             with open("undecided-raw", "w") as outfile:
                 outfile.write(json.dumps(dataJson))
-            cmdCurl = sb.Popen(['curl', '-s', '--location', '-X', 'PUT', url, '-H', 'Content-Type: application/json', \
-                        '-H', 'Accept: application/json', '--user', '{}:{}'.format(covuser, covkey), '-d', '@undecided-raw'], stdout=sb.PIPE)
-            while True:
-                line = cmdCurl.stdout.readline()
-                print('Triage defects to Undecided/Unclassified: curl {}'.format(bytes.decode(line, 'utf-8')))
-                if not line:
-                    break
-            cmdCurl.communicate()
+            coverityapi.triageCoverityIssues(covuser, covkey, \
+                                                'http://{}:{}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"]), \
+                                                jsonStreams['streams'][0]['triageStoreName'], 'undecided-raw')
 
 def retrieveSnapshotIssues(covuser, covkey, offset):
     global covanalzyeCfgs
@@ -495,13 +639,15 @@ def retrieveSnapshotIssues(covuser, covkey, offset):
     dataRaw["snapshotScope"]["show"] = dict()
     dataRaw["snapshotScope"]["show"]["scope"] = covanalzyeCfgs["coverity_snapshot"]
     with open("data-raw", "w") as outfile:
+        utils.lightLogging('retrieveSnapshotIssues: dataRaw, {}'.format(dataRaw))
         outfile.write(json.dumps(dataRaw))
-    url = "http://{}:{}/api/v2/issues/search?includeColumnLabels=false&locale=en_us&offset={}&queryType=bySnapshot&rowCount=200".format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"], offset)
-    cmdCurl = sb.Popen(['curl', '-s', '--location', '-X', 'POST', url, '-H', 'Content-Type: application/json', \
-                        '-H', 'Accept: application/json', '--user', '{}:{}'.format(covuser, covkey), '-o', 'issues.json', '-d', '@data-raw'], stdout=sb.PIPE)
-    cmdCurl.wait()
+        outfile.flush()
+    coverityapi.queryCoverityIssues(covuser, covkey, \
+                                        'http://{}:{}'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"]), \
+                                        offset, 'data-raw', 'issues.json')
     fpIssues = open('issues.json')
     jsonIssues = json.load(fpIssues)
+    utils.heavyLogging('retrieveSnapshotIssues: totalRows {}'.format(jsonIssues['totalRows']))
     fpIssues.close()
 
     global rawCidInfos
@@ -525,6 +671,7 @@ def retrieveSnapshotIssues(covuser, covkey, offset):
     return len(jsonIssues["rows"])
 
 def loadcovanalzyeCfgs(covuser, covkey, configFile, reportConfigFile):
+    utils.heavyLogging('loadcovanalzyeCfgs: configFile {}'.format(configFile))
     if configFile == "":
         if os.path.exists('covanalyze.json') == False:
             sys.exit("Cannot found covanalyze.json")
@@ -535,30 +682,29 @@ def loadcovanalzyeCfgs(covuser, covkey, configFile, reportConfigFile):
     global covanalzyeCfgs
     covanalzyeCfgs = json.load(fpConfig)
     fpConfig.close()
-    if "coverity_project" not in covanalzyeCfgs or covanalzyeCfgs["coverity_project"] == "":
-        cmdCurl = sb.Popen(['curl', '-s', '-X', 'GET', '-H', 'Content-Type: application/json', \
-                        '-H', 'Accept: application/json', '--user', '{}:{}'.format(covuser, covkey), \
-                        'http://{}:{}/api/v2/streams/{}?locale=en_us'.format(covanalzyeCfgs["coverity_host"], covanalzyeCfgs["coverity_port"], covanalzyeCfgs["coverity_stream"])], stdout=sb.PIPE)
-        cmdCurl.wait()
-        logging.debug('loadcovanalzyeCfgs: get coverity project from stream {}'.format(covanalzyeCfgs["coverity_stream"]))
-        while True:
-            line = cmdCurl.stdout.readline()
-            logging.debug('loadcovanalzyeCfgs: api/v2/streams {}'.format(line))
-            projectObj = json.loads(line)
-            covanalzyeCfgs["coverity_project"] = projectObj["streams"][0]["primaryProjectName"]
-            break
-        logging.debug("loadcovanalzyeCfgs: got coverity project name {}".format(covanalzyeCfgs["coverity_project"]))
-    if os.path.exists('.coverity.license.config') == False:
-        with open('.coverity.license.config', 'w') as f:
-            f.write('#FLEXnet (do not delete this line)\n')
-            f.write('license-server 1123@papyrus.realtek.com\n')
+    if 'coverity_project' not in covanalzyeCfgs or covanalzyeCfgs['coverity_project'] == '':
+        coverityapi.queryCoverityStream(covuser, covkey, \
+                                        'http://{}:{}'.format(covanalzyeCfgs['coverity_host'], covanalzyeCfgs['coverity_port']), \
+                                        covanalzyeCfgs['coverity_stream'], '.streams.json')
+        utils.heavyLogging('loadcovanalzyeCfgs: get coverity project from stream {}'.format(covanalzyeCfgs["coverity_stream"]))
+        fpStreams = open('.streams.json')
+        streamsObj = json.load(fpStreams)
+        fpStreams.close()
+        covanalzyeCfgs["coverity_project"] = streamsObj["streams"][0]["primaryProjectName"]
+        if covanalzyeCfgs["coverity_project"] is None or covanalzyeCfgs["coverity_project"] == '':
+            utils.heavyLogging('loadcovanalzyeCfgs: invalid coverity project')
+            sys.exit(1)
+        utils.heavyLogging("loadcovanalzyeCfgs: got coverity project name {}".format(covanalzyeCfgs["coverity_project"]))
+
+    licPath = os.path.join(WORK_DIR, '.coverity.license.config')
+    covoperations.generateLicenseFile(licPath)
     if reportConfigFile == '':
         reportConfigFile = 'coverity_report_config.yaml'
     if os.path.exists(reportConfigFile) == False:
         sys.exit("Cannot found coverity_report_config.yaml")
     else:
         covanalzyeCfgs['coverity_report_config_path'] = os.path.abspath(reportConfigFile)
-        logging.debug("loadcovanalzyeCfgs: coverity report config path {}".format(covanalzyeCfgs['coverity_report_config_path']))
+        utils.heavyLogging("loadcovanalzyeCfgs: coverity report config path {}".format(covanalzyeCfgs['coverity_report_config_path']))
     if 'coverity_build_root' not in covanalzyeCfgs or covanalzyeCfgs['coverity_build_root'] == '':
         covanalzyeCfgs['coverity_build_root'] = os.getcwd()
         utils.heavyLogging('loadcovanalzyeCfgs: take {} as coverity_build_root'.format(covanalzyeCfgs['coverity_build_root']))
@@ -567,63 +713,63 @@ def loadcovanalzyeCfgs(covuser, covkey, configFile, reportConfigFile):
             # from dashboard
             logging.debug('loadcovanalzyeCfgs: coverity_scan_path defined')
             covanalzyeCfgs['coverity_command_prefix'] = covanalzyeCfgs['coverity_scan_path']
-    logging.debug('loadcovanalzyeCfgs: take {} as coverity commandprefix'.format(covanalzyeCfgs['coverity_command_prefix']))
+    utils.heavyLogging('loadcovanalzyeCfgs: take {} as coverity commandprefix'.format(covanalzyeCfgs['coverity_command_prefix']))
+    return covanalzyeCfgs
 
-def generatePreviewReport():
-    global covanalzyeCfgs
-    covCmdPrefix = covanalzyeCfgs['coverity_command_prefix']
-    if covCmdPrefix != "":
-        covCmd = os.path.join(covCmdPrefix, "cov-commit-defects")
+def coverityCommandFullPath(cmd, prefix):
+    if prefix != '':
+        covCmd = os.path.join(prefix, cmd)
     else:
-        covCmd = "cov-commit-defects"
+        covCmd = cmd
+    return covCmd
+
+def generatePreviewReport(previewReportPath):
+    global covanalzyeCfgs
+    covCmd = coverityCommandFullPath('cov-commit-defects', covanalzyeCfgs['coverity_command_prefix'])
     covCmdPieces = covCmd.split()
     if os.path.isabs(covanalzyeCfgs['coverity_build_dir']):
         buildDir = covanalzyeCfgs['coverity_build_dir']
     else:
         buildDir = os.path.join(covanalzyeCfgs['coverity_build_root'], covanalzyeCfgs['coverity_build_dir'])
-    logging.debug("COVANALYZE: generatePreviewReport {} {}".format(covCmd, buildDir))
-    cmdCurl = sb.Popen(covCmdPieces + ['-sf', os.path.join('..', '.coverity.license.config'), '--dir', buildDir, \
+    utils.heavyLogging("COVANALYZE: generatePreviewReport {} {}".format(covCmd, buildDir))
+    cmdCurl = sb.Popen(covCmdPieces + ['-sf', '.coverity.license.config', '--dir', buildDir, \
                         '--url', 'http://{}:{}'.format(covanalzyeCfgs['coverity_host'], covanalzyeCfgs['coverity_port']), \
                         '--auth-key-file', os.getenv('COV_AUTH_KEY'), \
                         '--stream', covanalzyeCfgs['coverity_stream'], \
-                        '--encryption', 'none', '--preview-report-v2', os.path.join(covanalzyeCfgs['coverity_build_root'], 'preview_report_v2.json')], stdout=sb.PIPE)
+                        '--encryption', 'none', '--preview-report-v2', os.path.join(covanalzyeCfgs['coverity_build_root'], previewReportPath)], stdout=sb.PIPE)
     cmdCurl.wait()
-    utils.heavyLogging("generatePreviewReport: file {}".format(os.path.abspath('preview_report_v2.json')))
+    utils.heavyLogging("generatePreviewReport: file {}".format(os.path.abspath(previewReportPath)))
 
 def retrieveDefectsJSON():
     global covanalzyeCfgs
 
-    if not os.path.isfile(os.path.join(covanalzyeCfgs['coverity_build_root'], 'preview_report_v2.json')):
-        utils.heavyLogging('retrieveDefectsJSON: Generate preview_report_v2.json')
-        generatePreviewReport()
+    previewReportPath = 'preview_report_v2.json'
+    if 'basePhase' in covanalzyeCfgs and covanalzyeCfgs['basePhase'] == True:
+        previewReportPath = 'preview_report_v2_parent.json'
+    if not os.path.isfile(os.path.join(covanalzyeCfgs['coverity_build_root'], previewReportPath)):
+        utils.heavyLogging('retrieveDefectsJSON: Generate {}'.format(previewReportPath))
+        generatePreviewReport(previewReportPath)
 
-    #covCmdPrefix = covanalzyeCfgs['coverity_scan_path']
-    covCmdPrefix = covanalzyeCfgs['coverity_command_prefix']
-    if covCmdPrefix != "":
-        covCmd = os.path.join(covCmdPrefix, "cov-format-errors")
-    else:
-        covCmd = "cov-format-errors"
+    covCmd = coverityCommandFullPath('cov-format-errors', covanalzyeCfgs['coverity_command_prefix'])
     covCmdPieces = covCmd.split()
     if os.path.isabs(covanalzyeCfgs['coverity_build_dir']):
         buildDir = covanalzyeCfgs['coverity_build_dir']
     else:
         buildDir = os.path.join(covanalzyeCfgs['coverity_build_root'], covanalzyeCfgs['coverity_build_dir'])
     utils.heavyLogging("retrieveDefectsJSON: {} {}".format(covCmd, buildDir))
-    cmdCurl = sb.Popen(covCmdPieces + ['-sf', os.path.join('..', '.coverity.license.config'), '--dir', buildDir, \
+    cmdCurl = sb.Popen(covCmdPieces + ['-sf', '.coverity.license.config', '--dir', buildDir, \
                         '--json-output-v8', 'defects.json', '--no-default-triage-filters', '--preview-report-v2', \
-                        os.path.join(covanalzyeCfgs['coverity_build_root'], 'preview_report_v2.json')], stdout=sb.PIPE)
+                        os.path.join(covanalzyeCfgs['coverity_build_root'], previewReportPath)], stdout=sb.PIPE)
     out, err = cmdCurl.communicate()
     utils.heavyLogging("retrieveDefectsJSON: file {}".format(os.path.abspath('defects.json')))
 
 def retrieveSnapshotsJSON(covuser, covkey):
     global covanalzyeCfgs
-    today = "{}-12-31".format(datetime.date.today().year)
+    tomorrow = datetime.date.today() + datetime.timedelta(days=1)
     utils.heavyLogging("retrieveSnapshotsJSON: curl streams/stream/snapshots")
-    cmdCurl = sb.Popen(['curl', '--location', '-X', 'GET', \
-                        'http://{}:{}/api/v2/streams/stream/snapshots?idType=byName&name={}&lastBeforeCodeVersionDate={}T00%3A00%3A00Z&locale=en_us'.format(covanalzyeCfgs['coverity_host'], covanalzyeCfgs['coverity_port'], covanalzyeCfgs['coverity_stream'], today), \
-                        '-H', 'Content-Type: application/json', '-H', 'Accept: application/json', '--user', \
-                        '{}:{}'.format(covuser, covkey), '-s', '-o', 'snapshots.json'], stdout=sb.PIPE)
-    cmdCurl.wait()
+    coverityapi.queryCoverityStreamSnapshotsBefore(covuser, covkey, \
+                                                'http://{}:{}'.format(covanalzyeCfgs['coverity_host'], covanalzyeCfgs['coverity_port']), \
+                                                covanalzyeCfgs['coverity_stream'], tomorrow, 'snapshots.json')
     with open('snapshots.json') as f:
         data = json.load(f)
         covanalzyeCfgs["coverity_snapshot"] = data['snapshotsForStream'][0]['id']
@@ -632,21 +778,19 @@ def retrieveSnapshotsJSON(covuser, covkey):
 def querySnapshotInfo(covuser, covkey):
     global covanalzyeCfgs
     logging.debug("COVANALYZE: curl snapshots/{}".format(covanalzyeCfgs["coverity_snapshot"]))
-    cmdCurl = sb.Popen(['curl', '--location', '-X', 'GET', \
-                        'http://{}:{}/api/v2/snapshots/{}?locale=en_us'.format(covanalzyeCfgs['coverity_host'], covanalzyeCfgs['coverity_port'], covanalzyeCfgs["coverity_snapshot"]), \
-                        '-H', 'Content-Type: application/json', '-H', 'Accept: application/json', '--user', \
-                        '{}:{}'.format(covuser, covkey), '-s', '-o', 'snapshot.json'], stdout=sb.PIPE)
-    cmdCurl.wait()
+    coverityapi.queryCoveritySnapshot(covuser, covkey, \
+                                        'http://{}:{}'.format(covanalzyeCfgs['coverity_host'], covanalzyeCfgs['coverity_port']), \
+                                        covanalzyeCfgs['coverity_snapshot'], 'snapshot.json')
     covanalzyeCfgs["snapshot_version"] = "null"
     covanalzyeCfgs["snapshot_description"] = "null"
     with open('snapshot.json') as f:
         data = json.load(f)
         if "sourceVersion" in data:
             covanalzyeCfgs['snapshot_version'] = data['sourceVersion']
-            logging.debug('COVANALYZE: got snapshot version {}'.format(covanalzyeCfgs['snapshot_version']))
+            utils.heavyLogging('querySnapshotInfo: got snapshot version {}'.format(covanalzyeCfgs['snapshot_version']))
         if "description" in data:
             covanalzyeCfgs['snapshot_description'] = data['description']
-            logging.debug('COVANALYZE: got snapshot description {}'.format(covanalzyeCfgs['snapshot_description']))
+            utils.heavyLogging('querySnapshotInfo: got snapshot description {}'.format(covanalzyeCfgs['snapshot_description']))
 
 def prepareReportConfig(cwd):
     global covanalzyeCfgs
@@ -670,9 +814,11 @@ def prepareReportConfig(cwd):
     else:
         utils.heavyLogging('prepareReportConfig: coverity report path {}'.format(covanalzyeCfgs['coverity_report_path']))
 
-def generateCVSSReport():
-    global covanalzyeCfgs
-    covReportPath = covanalzyeCfgs['coverity_report_path']
+def generateCVSSReport(configs):
+    hasCVSSOption = checkAnalyzeOption(configs, 'cvss')
+    if hasCVSSOption == False:
+        return
+    covReportPath = configs['coverity_report_path']
     if covReportPath != "":
         covCmd = os.path.join(covReportPath, "cov-generate-cvss-report")
     else:
@@ -683,16 +829,18 @@ def generateCVSSReport():
     cmdEnv['WRITE_ISSUES_JSON'] = 'cvssreport.json'
     if os.name == "posix":
         os.unsetenv('DISPLAY')
-    with open('cov-generate-cvss-report.log', "w") as logReport:
-        cmdShell = sb.Popen(covCmdPieces + [covanalzyeCfgs['coverity_report_config_path'], '--project', covanalzyeCfgs['coverity_project'], \
+    with open('cov-generate-cvss-report.log', 'w') as logReport:
+        cmdShell = sb.Popen(covCmdPieces + [configs['coverity_report_config_path'], '--project', configs['coverity_project'], \
                         '--auth-key-file', os.getenv('COV_AUTH_KEY'), '--report', '--output', 'cvss_tmp.pdf'], stdout=logReport, stderr=logReport, env=cmdEnv)
         cmdShell.wait()
         logReport.flush()
     utils.heavyLogging('generateCVSSReport: {}'.format(os.path.abspath('cvssreport.json')))
 
-def generateIntegrityReport():
-    global covanalzyeCfgs
-    covReportPath = covanalzyeCfgs['coverity_report_path']
+def generateIntegrityReport(configs):
+    hasSeverityOption = checkAnalyzeOption(configs, 'severity')
+    if hasSeverityOption == False:
+        return
+    covReportPath = configs['coverity_report_path']
     if covReportPath != "":
         covCmd = os.path.join(covReportPath, "cov-generate-security-report")
     else:
@@ -704,7 +852,7 @@ def generateIntegrityReport():
     if os.name == "posix":
         os.unsetenv('DISPLAY')
     with open('cov-generate-security-report.log', "w") as logReport:
-        cmdShell = sb.Popen(covCmdPieces + [covanalzyeCfgs['coverity_report_config_path'], '--project', covanalzyeCfgs['coverity_project'], \
+        cmdShell = sb.Popen(covCmdPieces + [configs['coverity_report_config_path'], '--project', configs['coverity_project'], \
                         '--auth-key-file', os.getenv('COV_AUTH_KEY'), '--output', 'security_tmp.pdf'], stdout=logReport, stderr=logReport, env=cmdEnv)
         cmdShell.wait()
         logReport.flush()
@@ -716,14 +864,53 @@ def analyzedDefectsToJSON():
     analyzedDefects = dict()
     analyzedDefects['host'] = covanalzyeCfgs['coverity_host']
     analyzedDefects['port'] = covanalzyeCfgs['coverity_port']
+    # RULE to result detectedIssues[mapKey]['assignee'] in covjira.py
+    # author: git glame author as JIRA issue assignee
+    # committer: git log committer as JIRA issue assignee
+    # component: group issue by component and git glame author as JIRA sub-task assignee
+    # group_by_author: group issue by author
+    # another factor of JIRA issue assign is JIRA stage config defects_assign_policy: author, component lead, default
     analyzedDefects['assignPolicy'] = covanalzyeCfgs['coverity_defects_assign_policy']
     analyzedDefects['snapshot'] = covanalzyeCfgs['coverity_snapshot']
     analyzedDefects['snapshotVersion'] = covanalzyeCfgs['snapshot_version']
     analyzedDefects['snapshotDescription'] = covanalzyeCfgs['snapshot_description']
+    analyzedDefects['coverityProject'] = covanalzyeCfgs['coverity_project']
     analyzedDefects['coverityStream'] = covanalzyeCfgs['coverity_stream']
     with open('defects_.json') as f:
         analyzedDefects['defects'] = json.load(f)
     return analyzedDefects
+
+def detailedHtmlReport(artifcats, configs, analyzedDefects):
+    if 'basePhase' in configs and configs['basePhase'] == True:
+        utils.heavyLogging('detailedHtmlReport: skip base phase')
+        return
+    if 'PF_COV_DETAILED_HTML_REPORT' in os.environ and os.getenv('PF_COV_DETAILED_HTML_REPORT') == '1':
+        covCmd = coverityCommandFullPath('cov-format-errors', configs['coverity_command_prefix'])
+        covCmdPieces = covCmd.split()
+        licensePath = os.path.join(configs['workDir'], '.coverity.license.config')
+        utils.heavyLogging('detailedHtmlReport: has PF_COV_DETAILED_HTML_REPORT')
+        detailedHtmlReportDir = os.path.join(configs['workDir'], 'coverityReport', 'detailed')
+        utils.makeEmptyDirectory(detailedHtmlReportDir)
+        utils.saveEnv(configs['workDir'], 'PF_COV_DETAILED_HTML_REPORT_DIR', os.path.join(os.getenv('WORKSPACE'), detailedHtmlReportDir))
+        for cid in analyzedDefects['defects']:
+            mergeKey = analyzedDefects['defects'][cid]['mergeKey']
+            reportDir = os.path.join(detailedHtmlReportDir, mergeKey)
+            htmlReportScript = '-sf {} --dir {} --merge-key-regex {} --html-output {}'.format(licensePath, configs['coverity_build_dir'], mergeKey, reportDir)
+            utils.popenWithStdout(covCmdPieces + htmlReportScript.split(), dict(os.environ))
+
+        if 'BUILD_BRANCH' in os.environ:
+            zipFilename = os.path.join(configs['workDir'], 'coverityDetailedHtmlReport-{}.zip'.format(os.getenv('BUILD_BRANCH')))
+        else:
+            zipFilename = os.path.join(configs['workDir'], 'coverityDetailedHtmlReport.zip')
+        import zipfile
+        with zipfile.ZipFile(zipFilename, mode='w') as zf:
+            for root, dirs, files in os.walk(detailedHtmlReportDir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Create a proper archive path by removing the directory prefix
+                    arc_path = os.path.relpath(file_path, start=detailedHtmlReportDir)
+                    zf.write(file_path, arc_path)
+        artifcats.append(os.path.basename(zipFilename))
 
 def main(argv):
     skipTranslate = False
@@ -807,7 +994,8 @@ def main(argv):
     #     Load configurations
     #     Get coverity project name if necessary
     #     Generate .coverity.license.config
-    loadcovanalzyeCfgs(covuser, covpass, configFile, reportConfigFile)
+    configs = loadcovanalzyeCfgs(covuser, covpass, configFile, reportConfigFile)
+    configs['workDir'] = WORK_DIR
     cwd = os.getcwd()
     os.chdir(WORK_DIR)
     # step 2
@@ -832,6 +1020,8 @@ def main(argv):
     querySnapshotInfo(covuser, covpass)
     # step 6
     #     retrieve snapshot issues to get OWASP, CWE store to rawCidInfos
+    global totalRows
+    totalRows = 999999    
     retrievedRows = 0
     while retrievedRows < totalRows:
         retrievedRows += retrieveSnapshotIssues(covuser, covpass, retrievedRows)
@@ -840,13 +1030,13 @@ def main(argv):
     prepareReportConfig(cwd)
     # step 8
     #     cov-generate-cvss-report: "cvssreport.json" to get defect's cvssSeverity
-    generateCVSSReport()
+    generateCVSSReport(configs)
     # step 9
     #     syn-generate-security-report: "coverity-issues.csv" to get defect's Severity
-    generateIntegrityReport()
+    generateIntegrityReport(configs)
     # step 10
     #     store cvss, severity into rawCidInfos
-    cvssReportScissors()
+    cvssReportScissors(configs)
     # step 11
     #     output defects_.json
     global cids
@@ -863,13 +1053,24 @@ def main(argv):
     analyzedDefects = analyzedDefectsToJSON()
     os.chdir(cwd)
 
-    if "BUILD_BRANCH" in os.environ:
-        analyzedDefectsJSONPath = "preview-report-committer-{}.json".format(os.getenv('BUILD_BRANCH'))
+    artifcats = []
+    if 'basePhase' in configs:
+        analyzedDefectsJSONPath = utils.getPFPreviewReport(basePhase=configs['basePhase'])
     else:
-        analyzedDefectsJSONPath = "preview-report-committer.json"
+        analyzedDefectsJSONPath = utils.getPFPreviewReport(basePhase=False)
     with open(analyzedDefectsJSONPath, 'w') as fp:
         json.dump(analyzedDefects, fp, indent=2)
     utils.heavyLogging("main: final report {}".format(os.path.abspath(analyzedDefectsJSONPath)))
+    artifcats.append('WORKSPACE:{}'.format(analyzedDefectsJSONPath))
+
+    detailedHtmlReport(artifcats, configs, analyzedDefects)
+    # output .artifacts
+    # case 1: cov-analyze in buildwithcoverity, append '.artifacts'
+    # case 2: cov-analyze standalone, append '.artifacts' is fine, INIT_WORKDIR executed in covanalyze.groovy
+    fpArtifacts = open(os.path.join(WORK_DIR, '.artifacts'), 'a')
+    for artifcat in artifcats:
+        fpArtifacts.write('{},'.format(artifcat))
+    fpArtifacts.close()
 
 if __name__ == "__main__":
     main(sys.argv)

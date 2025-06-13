@@ -3,7 +3,7 @@ import getopt, sys
 import os, shutil, logging
 import subprocess as sb
 import glob
-import utils
+import utils, coverityapi
 
 def checkReportInPATH(path):
     try:
@@ -19,9 +19,7 @@ def downloadURFSif(dir):
         urfSIFPath = os.path.join(dir, "URF-sif/urf.sif")
         if not os.path.isfile(urfSIFPath):
             urfSIFDir = os.path.dirname(os.path.abspath(urfSIFPath))
-            if os.path.exists(urfSIFDir):
-                shutil.rmtree(urfSIFDir)
-            os.makedirs(urfSIFDir, exist_ok=True)
+            utils.makeEmptyDirectory(urfSIFDir)
             os.chdir(urfSIFDir)
             cmdEnv = dict(os.environ)
             cmdEnv['GIT_SSL_NO_VERIFY'] = 'true'
@@ -29,13 +27,29 @@ def downloadURFSif(dir):
                                 '--depth', '1', '.'], stdout=sb.PIPE, env=cmdEnv)
             cmdGit.wait()
             logging.debug("downloadURFSif: checkout CTCSOC urf.sif ({})".format(urfSIFPath))
-        commandPrefix = "singularity exec {}".format(urfSIFPath).split()
+        bindAtTmp = ''
+        bindJobTmp = ''
+        if os.path.isdir('{}@tmp'.format(os.getenv('WORKSPACE'))):
+            bindAtTmp = '-B {}@tmp/:{}@tmp/'.format(os.getenv('WORKSPACE'), os.getenv('WORKSPACE'))
+        if os.path.isdir('{}_job_tmp'.format(os.getenv('WORKSPACE'))):
+            bindJobTmp = '-B {}_job_tmp/:{}_job_tmp/'.format(os.getenv('WORKSPACE'), os.getenv('WORKSPACE'))
+        commandPrefix = "singularity exec -B {}:{} {} {} -H {} {}".format( \
+                            os.getenv('WORKSPACE'), os.getenv('WORKSPACE'), \
+                            bindAtTmp, bindJobTmp, \
+                            os.getenv('WORKSPACE'), urfSIFPath).split()
         os.chdir(pwd)
         return commandPrefix
     else:
         logging.debug('Singularity image not available in windows')
         os.chdir(pwd)
         return []
+
+def getCoveritySnapshot():
+    return utils.getEnv('COV_SNAPSHOT')
+    #if utils.hasEnv('BUILD_BRANCH'):
+    #    return utils.getEnv('BR{}_COV_SNAPSHOT'.format(utils.getEnv('BUILD_BRANCH')))
+    #else:
+    #    return utils.getEnv('COV_SNAPSHOT')
 
 def generateReport(configs):
     JENKINS_WS = configs['JENKINS_WS']
@@ -75,19 +89,26 @@ def generateReport(configs):
         reportUnderWS = os.path.join(JENKINS_WS, configs['coverity_report_config'])
         # formal configs['coverity_report_config']: settings/URF/OOO.xml
         reportUnderPFRoot = os.path.join(pfRoot, configs['coverity_report_config'])
-        if os.path.isfile(reportUnderWS):
-            fpReportConfig = open(reportUnderWS)
-            reportConfigLines = fpReportConfig.readlines()
-            fpReportConfig.close()
-            utils.heavyLogging("generateReport: take WS report config ({})".format(reportUnderWS))
-        elif os.path.isfile(reportUnderPFRoot):
+        if os.path.isfile(reportUnderPFRoot):
             fpReportConfig = open(reportUnderPFRoot)
             reportConfigLines = fpReportConfig.readlines()
             fpReportConfig.close()
             utils.heavyLogging("generateReport: take work dir report config ({})".format(reportUnderPFRoot))
+        elif os.path.isfile(reportUnderWS):
+            fpReportConfig = open(reportUnderWS)
+            reportConfigLines = fpReportConfig.readlines()
+            fpReportConfig.close()
+            utils.heavyLogging("generateReport: take WS report config ({})".format(reportUnderWS))
         else:
             sys.exit("COVREPORT: invalid report config {}".format(configs['coverity_report_config']))
 
+    if configs['coverity_report_latest_snapshot'] == True:
+        snapShotId = getCoveritySnapshot()
+        for i in range(len(reportConfigLines)):
+            if reportConfigLines[i].startswith('snapshot-id:'):
+                reportConfigLines[i] = 'snapshot-id: {}\n'.format(snapShotId)
+                break
+                    
     fpReportConfig = open(os.path.join(WORK_DIR, 'coverity_report_config.yaml'), "w")
     fpReportConfig.writelines(reportConfigLines)
     fpReportConfig.close()
@@ -112,18 +133,16 @@ def generateReport(configs):
     else:
         utils.heavyLogging('generateReport: coverity projects undefined')
         sys.exit(-1)
-    #elif 'PF_COV_STREAMS' in os.environ:
-    #    # retrieve coverity project from covertiy stream
-    #    configs['coverity_url'] = covUrl
-    #    covStreams = os.getenv('PF_COV_STREAMS').split(',')
-    #    for covStream in covStreams:
-    #        configs['coverity_stream'] = covStream
-    #        coverityProjects.append(utils.retrieveCoverityProjectFromStream(configs, covuser, covpass))
     with open(os.path.join(WORK_DIR, 'projects'), 'w') as f:
         json.dump(coverityProjects, f)
 
     if 'coverity_report_dst' in configs:
         os.makedirs(configs['coverity_report_dst'], exist_ok=True)
+    # for singularity, COV_AUTH_KEY file would be located under '_job_tmp' to raise 'Failed to read auth-key file' error
+    #shutil.copyfile(os.getenv('COV_AUTH_KEY'), os.path.join(WORK_DIR, '.pf-COV_AUTH_KEY'))
+    if 'DISPLAY' in os.environ:
+        del os.environ['DISPLAY']
+    cmdEnv = dict(os.environ)
     for coverityProject in coverityProjects:
         print('COVREPORT: generate report for {}'.format(coverityProject), flush = True)
         reports = ['integrity', 'security', 'cvss']
@@ -132,12 +151,9 @@ def generateReport(configs):
             print('COVREPORT: commamd {}'.format(covCmd), flush = True)
             covCmdPieces = reportPrefixes + [covCmd]
             utils.heavyLogging('generateReport: covCmdPieces {}'.format(covCmdPieces))
-            cmdEnv = dict(os.environ)
             if report == 'security':
                 cmdEnv['WRITE_SEVERITIES_CSV'] = 'coverity_{}_{}.csv'.format(coverityProject, report)
             cmdEnv['WRITE_REPORT_XML'] = 'coverity_{}_{}.xml'.format(coverityProject, report)
-            if os.name == "posix":
-                os.unsetenv('DISPLAY')
             with open(os.path.join(WORK_DIR, 'cov-generate-{}-report.log'.format(report)), "w") as logReport:
                 if report == 'cvss':
                     cmdShell = sb.Popen(covCmdPieces + [os.path.join(WORK_DIR, 'coverity_report_config.yaml'), \
@@ -148,9 +164,10 @@ def generateReport(configs):
                             '--project', coverityProject, '--auth-key-file', os.getenv('COV_AUTH_KEY'), '--output', \
                             'coverity_{}_{}.pdf'.format(coverityProject, report)], stdout=logReport, stderr=logReport, env=cmdEnv)
                 cmdShell.wait()
-            print('COVREPORT: generate {} report {}/{}'.format(report, 'coverity_{}_{}.pdf'.format(coverityProject, report), os.path.abspath(cmdEnv['WRITE_REPORT_XML'])), flush = True)
+            print('COVREPORT: generate {} report {}({})'.format(report, 'coverity_{}_{}.pdf'.format(coverityProject, report), os.path.abspath(cmdEnv['WRITE_REPORT_XML'])), flush = True)
         if 'coverity_report_ignored' in configs and configs['coverity_report_ignored'] == True:
             generateOSSReport(coverityProject, covUrl, WORK_DIR)
+    #os.remove(os.path.join(WORK_DIR, '.pf-COV_AUTH_KEY'))
     with open(os.path.join(WORK_DIR, 'coverity_projects.json'), 'w') as f:
         json.dump(coverityProjects, f)    
     # move to configs['coverity_report_dst']
@@ -227,12 +244,11 @@ def generateOSSReport(coverityProject, url, workDir):
     fetchRows = 0
     totalRows = 0
     while True:
-        cmdShell = sb.Popen(['curl', '-L', '-X', 'POST', \
-                             '{}api/v2/issues/search?includeColumnLabels=true&locale=en_us&offset={}'.format(url, fetchRows), \
-                             '-H', 'Content-Type: application/json', '-H', 'Accept: application/json', \
-                             '--user', '{}:{}'.format(authInfo['username'], authInfo['key']), '--data', '@{}'.format(os.path.join(WORK_DIR, 'payload.json')), \
-                             '-o', os.path.join(WORK_DIR, 'ignored.json')], stdout=sb.PIPE)
-        cmdShell.wait()
+        if url.endswith('/'):
+            url = url[:-1]
+        #utils.heavyLogging("debug coverityapi 256 reviewed")
+        coverityapi.queryCoverityIssues(authInfo['username'], authInfo['key'], url, fetchRows, \
+                                        os.path.join(WORK_DIR, 'payload.json'), os.path.join(WORK_DIR, 'ignored.json'))
         fpIgnored = open(os.path.join(WORK_DIR, 'ignored.json'))
         ignoredDefects = json.load(fpIgnored)
         fpIgnored.close()

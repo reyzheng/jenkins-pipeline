@@ -4,6 +4,7 @@ def init(stageName) {
         blackduck_enabled: true,
         blackduck_project_name: "",
         blackduck_project_version: "",
+        blackduck_detect_path: "",
         blackduck_airgap_mode: true,
         blackduck_offline_mode: false,
         blackduck_snippet_scan: false,
@@ -11,13 +12,11 @@ def init(stageName) {
         blackduck_token_credential: "",
         blackduck_project_path: "",
         blackduck_project_excludes: "",
+        blackduck_repoproject_excludes: "",
         scan_env: "",
-        bdaas: false,
-
-        scriptableParams: ["blackduck_project_path", "blackduck_project_name", "blackduck_project_excludes"]
+        bdaas: true
     ]
 
-    def utils = load "utils.groovy"
     def stageConfig = utils.commonInit(stageName, defaultConfigs)
     utils.finalizeInit(stageName, stageConfig)
 
@@ -32,7 +31,8 @@ def func(stageName) {
         utils.pyExec(stageConfig["actionName"], stageConfig["stageName"], "", [])
     }
     
-    if (stageConfig['blackduck_offline_mode'] == true) {
+    /*
+    if (stageConfig["blackduck_offline_mode"] == true) {
         dir (".pf-${plainStageName}") {
             dir ("offline_output") {
                 def fileSeparator = "\\"
@@ -50,6 +50,9 @@ def func(stageName) {
             }
         }
     }
+    */
+
+    utils.archiveStageArtifacts(stageConfig["stageName"])
 }
 
 return this

@@ -4,15 +4,3 @@ pipeline {
     agent {
         label nodeLabel
     }
-    options {
-        skipDefaultCheckout true
-        timestamps ()
-    }
-    stages {
-		stage("PF-init") {
-			steps {
-				script {
-					pf = pfInit()
-				}
-			}
-		}

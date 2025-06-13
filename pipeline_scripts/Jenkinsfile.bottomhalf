@@ -3,10 +3,12 @@
         always {
             script {
                 pf.preparePostStage()
-                dir ("scripts") {
-                    def hasLogParserRule = fileExists 'logParserRule'
-                    if (hasLogParserRule) {
-                        logParser failBuildOnError: true, showGraphs:true, unstableOnWarning: true, useProjectRule: true, projectRulePath: 'logParserRule'
+                dir (env.PF_ROOT) {
+                    dir ("scripts") {
+                        def hasLogParserRule = fileExists 'logParserRule'
+                        if (hasLogParserRule) {
+                            logParser failBuildOnError: true, showGraphs:true, unstableOnWarning: true, useProjectRule: true, projectRulePath: 'logParserRule'
+                        }
                     }
                 }
                 pf.postStage("always")

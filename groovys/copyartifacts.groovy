@@ -26,7 +26,7 @@ def func(stageName) {
     }
 
     if (configs["remote_jenkins_url"] != "") {
-        withCredentials([string(credentialsId: config["remote_jenkins_credentials"], variable: "JENKINS_TOKEN")]) {
+        withCredentials([string(credentialsId: configs["remote_jenkins_credentials"], variable: "JENKINS_TOKEN")]) {
             utils.pyExec(configs["actionName"], configs["stageName"], "", [])
         }
     }

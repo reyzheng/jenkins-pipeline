@@ -1,9 +1,9 @@
-import json
+import json, glob
 import getopt, sys
 import os, shutil, time
 import subprocess as sb
 import logging
-import utils, jira
+import utils, jira, urfftp
 
 #configs = dict()
 JENKINS_WS = ""
@@ -33,26 +33,67 @@ def queryURFStatus(smsAccount, SMSURFId):
 
     return RELEASE_STATUS
 
-def attachURFArtifacts(jenkinsReportUrl, urfProjects, issueKey, configs):
-    artifacts = configs['artifacts']
-    jiraSite = configs['jira_site']
-    if len(artifacts) == 0:
-        utils.heavyLogging('attachURFArtifacts: skip attach')
-        return
+def exportParams():
+    fpParams = open('env', 'r')
+    while True:
+        line = fpParams.readline()
+        if not line:
+            break
+        splitpos = line.index('=')
+        if splitpos > 0:
+            param = line[:splitpos].strip()
+            value = line[splitpos + 1:].strip()
+            os.environ[param] = value
+            utils.heavyLogging('exportParams: {}={}'.format(param, value))
+    fpParams.close()
 
-    #devopsUser = 'devops_jenkins'
-    #devsopsToken = '111127675998c80122b3d03a0347f583cd'
+def retrieveURFArtifacts(jenkinsReportUrl, urfProjects, configs):
+    retrievedFiles = []
+    artifacts = configs['artifacts']
+    artifacts.append("ENVPARAMS")
+    #if len(artifacts) == 0:
+    #    utils.heavyLogging('retrieveURFArtifacts: skip retrieve')
+    #    return
+
+    utils.heavyLogging('retrieveURFArtifacts: try to retrieve {}, {}'.format(artifacts, urfProjects))
     releaseJenkinsUser = configs['release_jenkins_user']
     releaseJenkinsToken = configs['release_jenkins_token']
     if 'RELEASE_JENKINS_TOKEN' in os.environ:
         releaseJenkinsToken = os.getenv('RELEASE_JENKINS_TOKEN')
     for artifact in artifacts:
         for urfProject in urfProjects:
-            if artifact == 'RSCAT':
-                utils.heavyLogging('attachURFArtifacts: Retrieve RSCAT')
+            if artifact == 'ENVPARAMS':
+                utils.heavyLogging('retrieveURFArtifacts: Retrieve ENVPARAMS')
+                if 'MFT_KEY' not in os.environ:
+                    utils.heavyLogging('retrieveURFArtifacts: skip retrieve ENVPARAMS')
+                    continue
+                sftpConfig = dict()
+                sftpConfig['dst'] = ''
+                sftpConfig['files'] = ['__urf__/package_list.json']
+                urfftp.urfFtp(sftpConfig)
+                if os.path.isfile('package_list.json'):
+                    fpPackageList = open('package_list.json')
+                    packageList = json.load(fpPackageList)
+                    fpPackageList.close()
+                    sftpConfig = dict()
+                    sftpConfig['dst'] = ''
+                    sftpConfig['files'] = []
+                    sftpConfig['names'] = []
+                    for files in packageList['files']:
+                        if files['name'] == '.pf_params' and files['type'] == 'file':
+                            sftpConfig['files'].append(files['path'])
+                            sftpConfig['names'].append(files['name'])
+                            utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts {}'.format(sftpConfig['files']))
+                            urfftp.urfFtp(sftpConfig)
+                            if os.path.isfile('.pf_params'):
+                                shutil.copy('.pf_params', 'env')
+                                exportParams()
+                            break
+            elif artifact == 'RSCAT':
+                utils.heavyLogging('retrieveURFArtifacts: Retrieve RSCAT')
                 # https://user:token@release.rtkbf.com/jenkins/job/CTC_PSP_DEMO/job/Test/122/Release_20Report/rscat_CTCSOC_test.html'
                 artifactFile = 'rscat_{}.html'.format(urfProject)
-                utils.heavyLogging('attachURFArtifacts: Retrieve artifacts: {}{}'.format(jenkinsReportUrl, artifactFile))
+                utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts: {}{}'.format(jenkinsReportUrl, artifactFile))
                 cmdCurl = sb.Popen(['curl', '-s', '-k', '-w', '%{http_code}', '-X', 'GET', \
                                         '--user', '{}:{}'.format(releaseJenkinsUser, releaseJenkinsToken), \
                                         '{}{}'.format(jenkinsReportUrl, artifactFile), '-o', artifactFile], stdout=sb.PIPE)
@@ -62,17 +103,17 @@ def attachURFArtifacts(jenkinsReportUrl, urfProjects, issueKey, configs):
                     http_code = bytes.decode(http_code, 'utf-8')
                     break
                 if http_code == '200':
-                    jira.jiraUploadAttachment(jiraSite, issueKey, artifactFile)
+                    retrievedFiles.append(artifactFile)
                 else:
-                    utils.heavyLogging('attachURFArtifacts: Retrieve artifacts {} failed'.format(artifactFile))
+                    utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts {} failed'.format(artifactFile))
             elif artifact == 'COVREPORT':
-                utils.heavyLogging('attachURFArtifacts: Retrieve COVREPORT')
+                utils.heavyLogging('retrieveURFArtifacts: Retrieve COVREPORT')
                 # https://user:token@release.rtkbf.com/jenkins/job/CTC_PSP_DEMO/job/Test/122/Release_20Report/user/coverity_CTCSOC_test_cvss.xml'
                 artifactFiles = ['coverity_{}_cvss.pdf'.format(urfProject),
                                  'coverity_{}_integrity.pdf'.format(urfProject),
                                  'coverity_{}_security.pdf'.format(urfProject),]
                 for artifactFile in artifactFiles:
-                    utils.heavyLogging('attachURFArtifacts: Retrieve artifacts {}user/{}'.format(jenkinsReportUrl, artifactFile))
+                    utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts {}user/{}'.format(jenkinsReportUrl, artifactFile))
                     cmdCurl = sb.Popen(['curl', '-s', '-k', '-w', '%{http_code}', '-X', 'GET', \
                                             '--user', '{}:{}'.format(releaseJenkinsUser, releaseJenkinsToken), \
                                             '{}user/{}'.format(jenkinsReportUrl, artifactFile), '-o', artifactFile], stdout=sb.PIPE)
@@ -82,16 +123,16 @@ def attachURFArtifacts(jenkinsReportUrl, urfProjects, issueKey, configs):
                         http_code = bytes.decode(http_code, 'utf-8')
                         break
                     if http_code == '200':
-                        jira.jiraUploadAttachment(jiraSite, issueKey, artifactFile)
+                        retrievedFiles.append(artifactFile)
                     else:
-                        utils.heavyLogging('attachURFArtifacts: Retrieve artifacts {} failed'.format(artifactFile))
+                        utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts {} failed'.format(artifactFile))
             elif artifact == 'BDREPORT':
-                utils.heavyLogging('attachURFArtifacts: Retrieve BDREPORT')
+                utils.heavyLogging('retrieveURFArtifacts: Retrieve BDREPORT')
                 # https://user:token@release.rtkbf.com/jenkins/job/CTC_PSP_DEMO/job/Test/122/Release_20Report/user/blackduck_CTCSOC_test_components.csv'
                 artifactFiles = ['blackduck_{}_components.csv'.format(urfProject),
                                  'blackduck_{}_security.csv'.format(urfProject)]
                 for artifactFile in artifactFiles:
-                    utils.heavyLogging('attachURFArtifacts: Retrieve artifacts: {}user/{}'.format(jenkinsReportUrl, artifactFile))
+                    utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts: {}user/{}'.format(jenkinsReportUrl, artifactFile))
                     cmdCurl = sb.Popen(['curl', '-s', '-k', '-w', '%{http_code}', '-X', 'GET', \
                                             '--user', '{}:{}'.format(releaseJenkinsUser, releaseJenkinsToken), \
                                             '{}user/{}'.format(jenkinsReportUrl, artifactFile), '-o', artifactFile], stdout=sb.PIPE)
@@ -101,18 +142,74 @@ def attachURFArtifacts(jenkinsReportUrl, urfProjects, issueKey, configs):
                         http_code = bytes.decode(http_code, 'utf-8')
                         break
                     if http_code == '200':
-                        jira.jiraUploadAttachment(jiraSite, issueKey, artifactFile)
+                        retrievedFiles.append(artifactFile)
                     else:
-                        utils.heavyLogging('attachURFArtifacts: Retrieve artifacts {} failed'.format(artifactFile))
+                        utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts {} failed'.format(artifactFile))
+            elif artifact == 'USERREPORT':
+                utils.heavyLogging('retrieveURFArtifacts: Retrieve USERREPORT')
+                if 'MFT_KEY' not in os.environ:
+                    utils.heavyLogging('retrieveURFArtifacts: skip retrieve USERREPORT')
+                    continue
+                sftpConfig = dict()
+                sftpConfig['dst'] = ''
+                sftpConfig['files'] = ['__urf__/package_list.json']
+                urfftp.urfFtp(sftpConfig)
+                if os.path.isfile('package_list.json'):
+                    fpPackageList = open('package_list.json')
+                    packageList = json.load(fpPackageList)
+                    fpPackageList.close()
+                    sftpConfig = dict()
+                    sftpConfig['dst'] = ''
+                    sftpConfig['files'] = []
+                    sftpConfig['names'] = []
+                    for files in packageList['files']:
+                        if files['path'].startswith('.pf_user_reports') and files['type'] == 'file':
+                            sftpConfig['files'].append(files['path'])
+                            sftpConfig['names'].append(files['name'])
+                    utils.heavyLogging('retrieveURFArtifacts: Retrieve artifacts {}'.format(sftpConfig['files']))
+                    urfftp.urfFtp(sftpConfig)
+                    for file in sftpConfig['names']:
+                        if os.path.isfile(file):
+                            retrievedFiles.append(file)
             elif artifact.startswith('file:'):
                 tokens = artifact.split(':')
-                if os.path.isfile(tokens[1]):
-                    jira.jiraUploadAttachment(jiraSite, issueKey, tokens[1])
-                    utils.heavyLogging('attachURFArtifacts: file {}'.format(tokens[1]))
+                utils.heavyLogging('retrieveURFArtifacts: check file pattern {}'.format(tokens[1]))
+                if '**' in tokens[1]:
+                    import glob2
+                    files = glob2.glob(tokens[1])
                 else:
-                    utils.heavyLogging('attachURFArtifacts: invalid file {}'.format(tokens[1]))
+                    files = glob.glob(tokens[1])
+                for file in files:
+                    utils.heavyLogging('retrieveURFArtifacts: check file {}'.format(file))
+                    if os.path.isfile(file):
+                        # will got abspath here. refer to absArtifactsPath()
+                        if file.startswith(os.getenv('WORKSPACE')):
+                            file = os.path.relpath(file, os.getenv('WORKSPACE'))
+                            retrievedFiles.append('WORKSPACE:{}'.format(file))
+                        else:
+                            retrievedFiles.append(file)
+                        utils.heavyLogging('retrieveURFArtifacts: file {}'.format(file))
+                    else:
+                        utils.heavyLogging('retrieveURFArtifacts: invalid file {}'.format(file))
             else:
-                utils.heavyLogging('attachURFArtifacts: invalid artifacts {}'.format(artifact))
+                utils.heavyLogging('retrieveURFArtifacts: invalid artifacts {}'.format(artifact))
+
+    utils.heavyLogging('retrieveURFArtifacts: retrieved {}'.format(retrievedFiles))
+    fpArtifacts = open(".artifacts", "w")
+    fpArtifacts.write(','.join(retrievedFiles))
+    fpArtifacts.close()
+    return retrievedFiles
+
+def attachURFArtifacts(artifactFiles, issueKey, configs):
+    # TODO: under WORKDIR
+    if len(artifactFiles) == 0:
+        utils.heavyLogging('attachURFArtifacts: skip attach')
+        return
+    for artifactFile in artifactFiles:
+        if artifactFile.startswith('WORKSPACE:'):
+            artifactFile = artifactFile.split(':')[1]
+            artifactFile = os.path.join(os.getenv('WORKSPACE'), artifactFile)
+        jira.jiraUploadAttachment(configs['jira_site'], issueKey, artifactFile)
 
 def absArtifactsPath(configs):
     for i in range(len(configs['artifacts'])):
@@ -121,10 +218,32 @@ def absArtifactsPath(configs):
             configs['artifacts'][i] = 'file:{}'.format(os.path.abspath(tokens[1]))
     return configs
 
+def waitingIssueClosed(issueKey, configs):
+    global WORK_DIR
+    global JENKINS_WS
+    issueStatus = ''
+
+    while issueStatus != configs['waiting_issue_status']:
+        time.sleep(60)
+
+        jqlCommand = "project={} and key='{}'".format(configs['jira_project'], issueKey)
+        jira.jiraJQLSearch(configs['jira_site'], jqlCommand, 0, 100, os.path.join(WORK_DIR, 'issues.json'))
+
+        fpIssues = open(os.path.join(WORK_DIR, 'issues.json'))
+        issues = json.load(fpIssues)
+        fpIssues.close()
+        if 'total' in issues and issues['total'] > 0:
+            issueStatus = issues['issues'][0]['fields']['status']['name']
+            utils.heavyLogging('waitingIssueClosed: got issue status {}'.format(issueStatus))
+        else:
+            utils.heavyLogging('waitingIssueClosed: cannot found {}'.format(issueKey))
+            sys.exit(1)
+
 def URFResult2JIRA(configs):
     global WORK_DIR
     global JENKINS_WS
 
+    issueKey = ''
     configs = absArtifactsPath(configs)
     urfProjects = []
     pwd = os.getcwd()
@@ -162,24 +281,22 @@ def URFResult2JIRA(configs):
     elif 'PIPELINE_AS_CODE_URF_ID' in os.environ:
         RELEASE_JOB = utils.getURFConfig(os.path.join(JENKINS_WS, "urf_package/config"), "RELEASE_JOB").strip()
         RELEASE_TYPE = utils.getURFConfig(os.path.join(JENKINS_WS, "urf_package/config"), "RELEASE_TYPE").strip()
-    configs['jira_project'] = jira.jiraGetProjectKey(configs['jira_site'], configs['jira_project'])
-    # take RELEASE_JOB as epic
-    jira.getKeyFields(configs['jira_site'], '')
-    utils.heavyLogging('Take RELEASE_JOB as EPIC name: {}'.format(RELEASE_JOB))
-    jira.getEPICKey(configs['jira_site'], configs['jira_project'], RELEASE_JOB)
-
-    fpEPICKey = open('epicKey.json')
-    fpEPICLinkField = open('epicLinkField.json')
-    epicKey = json.load(fpEPICKey)
-    epicLinkFieldId = json.load(fpEPICLinkField)
-    fpEPICKey.close()
-    fpEPICLinkField.close()
-    epicKey = epicKey['key']
-    epicLinkFieldId = epicLinkFieldId['id']
-    utils.heavyLogging('EPIC key: {}'.format(epicKey))
-    utils.heavyLogging('EPIC link field id: {}'.format(epicLinkFieldId))
+    configs['jira_project'] = jira.jiraGetProjectKey(configs['jira_site'], configs['jira_project'], '')
 
     urfRecord = utils.queryURFReleaseRecord(SMSURFId)
+    # retrieve report
+    if urfRecord['code'] == 0:
+        jenkinsReportUrl = urfRecord['data']['jenkinsReport']
+        utils.heavyLogging('URFResult2JIRA: got URF Report URL {} success'.format(jenkinsReportUrl))
+        artifactFiles = retrieveURFArtifacts(jenkinsReportUrl, urfProjects, configs)
+    else:
+        utils.heavyLogging('URFResult2JIRA: got URF Report URL ({}) failed, cannot retrieve report to JIRA'.format(SMSURFId))
+
+    if configs['post_jira'] == False:
+        utils.heavyLogging('URFResult2JIRA: skip post JIRA issue')
+        return issueKey
+    # post jira issue
+    jira.getKeyFields(configs['jira_site'], configs['defects_extra_fields'])
     jiraIssue = dict()
     jiraIssueFields = dict()
     # create issue with assignee is not preferred
@@ -194,10 +311,17 @@ def URFResult2JIRA(configs):
         jiraIssueFields['description'] = 'sftp://sdmft.rtkbf.com/release.out/{}'.format(urfRecord['data']['releaseName'])
     else:
         jiraIssueFields['description'] = ''
-    jiraIssueFields[epicLinkFieldId] = epicKey
     jiraIssueFields['issuetype'] = dict()
     jiraIssueFields['issuetype']['name'] = "Task"
     jiraIssue['fields'] = jiraIssueFields
+    jiraIssue['fields']['labels'] = ['RELEASE_JOB:{}'.format(RELEASE_JOB)]
+    if os.path.isfile('extraFieldsMap.json'):
+        with open('extraFieldsMap.json') as f:
+            fieldsMap = json.load(f)
+        for fieldsMapKey in fieldsMap:
+            fieldId = fieldsMap[fieldsMapKey]['id']
+            fieldValue = fieldsMap[fieldsMapKey]['value']
+            jiraIssue['fields'][fieldId] = fieldValue
     with open("urfIssue.json", "w") as outfile:
         json.dump(jiraIssue, outfile)
     jira.jiraCreateIssue(configs['jira_site'], 'urfIssue.json', 'urfIssueResult.json')
@@ -206,10 +330,11 @@ def URFResult2JIRA(configs):
     fpIssueResult.close()
     if 'errors' in jsonIssueResult:
         # create issue failed
-        logging.debug('Create issue {} field'.format(jiraIssueFields['summary']))
+        utils.heavyLogging('URFResult2JIRA: create issue [{}] failed'.format(jiraIssueFields['summary']))
+        sys.exit(-1)
     else:
         issueKey = jsonIssueResult['key']
-        logging.debug('New JIRA issue: {}'.format(issueKey))
+        utils.heavyLogging('URFResult2JIRA: new JIRA issue: {}'.format(issueKey))
         assignee = dict()
         assignee['name'] = configs['issue_assignee']
         with open('assignee.json', 'w') as fp:
@@ -217,21 +342,12 @@ def URFResult2JIRA(configs):
         jira.jiraAssignIssue(configs['jira_site'], issueKey, 'assignee.json', 'urfAssignResult.json')
 
         if urfRecord['code'] == 0:
-            jenkinsReportUrl = urfRecord['data']['jenkinsReport']
-            utils.heavyLogging('URFResult2JIRA: got URF Report URL {} success'.format(jenkinsReportUrl))
-        else:
-            utils.heavyLogging('URFResult2JIRA: got URF Report URL ({}) failed, cannot attach report to JIRA'.format(SMSURFId))
-            return
-        attachURFArtifacts(jenkinsReportUrl, urfProjects, issueKey, configs)
-        #jira.jiraUploadAttachment(configs['jira_site'], 'urfIssue.json', 'urfIssueResult.json')
-                    #jiraUploadAttachment idOrKey: issueKey, 
-                    #                            file: miscInfo["REPORTS"][i], 
-                    #                            site: jiraConfig.site_name
-                    #jiraAssignIssue idOrKey: issueKey, 
-                    #                        userName: jiraConfig.urf_to_jira_assignee, 
-                    #                        accountId: "",
-                    #                        site: jiraConfig.site_name
+            attachURFArtifacts(artifactFiles, issueKey, configs)
+        #else:
+        #    return issueKey
+    # TODO: remove chdir
     os.chdir(pwd)
+    return issueKey
 
 def main(argv):
     # check if jenkins credentials defined (as env. variable)
@@ -242,19 +358,13 @@ def main(argv):
     global JENKINS_WS
     global WORK_DIR
     try:
-        opts, args = getopt.getopt(argv[1:], 'w:j:f:u:p:v', ["work_dir=", "jenkins_workspace=", "config=", "user=", "password=", "version"])
+        opts, args = getopt.getopt(argv[1:], 'w:j:f:v', ["work_dir=", "jenkins_workspace=", "config=", "version"])
     except getopt.GetoptError:
         sys.exit()
     for name, value in opts:
         if name in ('-v', '--version'):
             print("0.1")
             sys.exit(0)
-        elif name in ('-u', '--user'):
-            # override if --user
-            covuser = value
-        elif name in ('-p', '--password'):
-            # override if --password
-            covpass = value
         elif name in ('-f', '--config'):
             configFile = value
         elif name in ('-j', '--jenkins_workspace'):
@@ -263,17 +373,21 @@ def main(argv):
             if os.path.isdir(value) == False:
                 os.makedirs(value)
             WORK_DIR = value
-            logging.basicConfig(filename=os.path.join(WORK_DIR, 'urfjira.log'), level=logging.DEBUG, filemode='w')
+            logging.basicConfig(filename=os.path.join(WORK_DIR, 'urfjira.log'), format='%(asctime)s %(levelname)-8s %(message)s', level=logging.DEBUG, filemode='w')
 
     # step 1
     #     Load configurations
     #     Get coverity project name if necessary
     #     Generate .coverity.license.config
+    utils.translateConfig(configFile)
     configs = utils.loadConfigs(configFile)
     if configs['enable'] == False:
         print('skip')
         sys.exit(0)
-    URFResult2JIRA(configs)
+    utils.cleanEnvAndArchives(WORK_DIR)
+    issueKey = URFResult2JIRA(configs)
+    if 'waiting_issue_status' in configs and configs['waiting_issue_status'] != '' and issueKey != '':
+        waitingIssueClosed(issueKey, configs)
 
 if __name__ == "__main__":
     main(sys.argv)

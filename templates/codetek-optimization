@@ -1,0 +1,32 @@
+Analyze the following C source code for possible optimizations, including but not limited to:
+
+1. Improving algorithm efficiency  
+2. Reducing redundant code (e.g., unused variables/functions)  
+3. Loop optimization  
+4. Memory management improvements  
+5. Opportunities for parallel processing  
+6. Reducing unnecessary I/O operations  
+7. Minimizing function call overhead  
+8. Using more efficient data structures  
+9. Leveraging caching when appropriate  
+
+Then optimize the code accordingly. Only modify parts relevant to optimization.  
+Do not remove unrelated sections of the code. Maintain functional equivalence.
+
+Input:
+File: ${FILE_NAME}
+Original Code:
+```c
+${SOURCE_CODE}
+```
+---
+### Expected Output Format (YAML):
+GPT must strictly follow this fixed YAML format:
+```yaml
+analysis: "Brief summary of the optimization. Use double quotes. Avoid special YAML characters unquoted (e.g., colons, %, &, etc.)."
+
+output:
+  file: "${FILE_NAME}"
+  output_code: |
+    [Optimized code goes here with correct indentation. Do not use markdown code fences.]
+```

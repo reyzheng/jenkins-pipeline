@@ -1,0 +1,5 @@
+  - **Memory corruption issues** (buffer overflows, use-after-free, double free, etc.).
+  - **Injection vulnerabilities** (SQL injection, command injection, etc.).
+  - **Privilege escalation risks** (insecure access controls, improper authentication).
+  - **Denial-of-service risks** (infinite loops, excessive resource consumption).
+  - **Race conditions** (TOCTOU vulnerabilities, concurrent execution issues).

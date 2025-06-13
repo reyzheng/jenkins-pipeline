@@ -1,0 +1,28 @@
+### Output Format (Strict Valid YAML Only):
+
+**Important:**
+- You must return only **valid YAML**.
+- **Do not** include any explanation or commentary—**YAML only**.
+- **Do not** include special characters such as brackets `[ ]`, braces `{ }`, or any markdown formatting in YAML values unless they are part of the original commit message or code.
+- **Do not** include markdown syntax such as code blocks, hashes, or backticks in any YAML value.
+- **Do not** use formatting indicators like `diff`, `+`, `-`, or `#`.
+
+```yaml
+commit_message:
+  summary: "Brief assessment of the commit message."
+
+  final_commit_message: |
+    "The original commit message is sufficient."  # Or a corrected message if truly needed.
+patches:
+  overall_review: "Short summary of patch quality. If clean, say: 'No changes needed.'"
+
+  refined_patches:
+    # For each file below, if the patch is already ideal, output:
+    # 'No changes needed.' (EXACTLY and without quotes).
+    # Do NOT make stylistic or trivial changes.
+    # Only output real corrections if needed.
+    "path/to/example1.c": |
+      No changes needed.
+    "path/to/example2.cpp": |
+      [Your corrected patch here, if applicable.]
+```

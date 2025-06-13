@@ -1,5 +1,6 @@
 def init(stageName) {
     def defaultConfigs = [
+        display_name: "gitam",
         dst: "",
         patch: "",
         push: true,
@@ -7,14 +8,15 @@ def init(stageName) {
         scriptableParams: []
     ]
 
-    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
-    utils.stashScriptedParamScripts(config.settings)
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(configs) {
+def func(stageName) {
+    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
+
     dir (configs.dst) {
         def pushCmd = ""
         if (configs.push == true) {

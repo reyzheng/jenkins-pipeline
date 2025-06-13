@@ -1,0 +1,27 @@
+# Gerrit Patch and Commit Message Review Prompt
+
+#### Objective:
+You will review a Gerrit patch and its commit message.
+---
+### Commit Message Rules:
+- **Do NOT repeat or rephrase the original commit message unless a clear improvement is required.**
+- Only revise it if there are actual issues with clarity, structure, scope, or correctness.
+- If the original commit message is already appropriate, output exactly:
+  `"The original commit message is sufficient."`
+---
+### Patch Review Rules:
+- Evaluate the patch for correctness, code structure, maintainability, and security.
+- Look for:
+  - Memory errors (e.g. buffer overflows, UAF)
+  - Injection vulnerabilities
+  - Privilege or access control flaws
+  - Denial-of-service risks
+  - Race conditions
+---
+### **Commit and Patch Data**
+${patches}
+
+Commit message:
+${commit_message}
+---
+${GPT_OUTPUT_FORMAT}

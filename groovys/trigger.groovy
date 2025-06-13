@@ -1,61 +1,53 @@
-import groovy.transform.Field
-
 def init(stageName) {
-    def utils = load "utils.groovy"
-    def actionName = utils.extractActionName(stageName)
-
     def defaultConfigs = [
         display_name: "",
-        enable: true,
+        enabled: true,
         // trigger local jenkins job
         job: "",
+        parameters: "{}",
         // trigger remote jenkins job
+        remote_url: "",
         remote_job: "",
-        remote_job_token: "",
-        remote_jenkins_user: "",
-        remote_jenkins_credentials: "",
-        remote_jenkins_parameters: ""
+        remote_job_token: ""
     ]
     def config = utils.commonInit(stageName, defaultConfigs)
-    config.settings.has_stashes = false
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(pipelineAsCode, configs, preloads) {
-    def underUnix = isUnix()
+def func(stageName) {
+    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
+    utils.pyExec(configs["actionName"], configs["stageName"], "NORMALIZE_CONFIG", [])
+    configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
+    utils.pyExec(configs["actionName"], configs["stageName"], "TRANSLATE_CONFIG", [])
+    configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
 
-    if (configs.enable == false) {
-        print "Stage ${preloads.stageName} cancelled manually"
+    if (configs["enabled"] == false) {
+        print "Stage ${stageName} cancelled manually"
         return
     }
-    def UPSTREAM_JOB = env.JOB_NAME
-    def UPSTREAM_BUILDNUMBER = env.BUILD_NUMBER
-    // trigger local job
-    if (configs.job != "") {
-        build job: configs.job, 
-                parameters: [
-                    string(name: 'UPSTREAM_JOB', value: UPSTREAM_JOB),
-                    string(name: 'UPSTREAM_BUILDNUMBER', value: String.valueOf(UPSTREAM_BUILDNUMBER))
-                ]
-    }
-    // trigger remote job
-    if (configs.remote_job != "") {
-        withCredentials([string(credentialsId: configs.remote_jenkins_credentials, variable: 'TOKEN')]) {
-            def urlTokens = configs.remote_job.split("://")
-            def parameters = readJSON text: configs["remote_jenkins_parameters"]
-            def parametersText = ""
-            for (def key in parameters.keySet()) {
-                parametersText += "\\&${key}=" + parameters[key]
-            }
-            def curlCommand = "curl --insecure -X POST ${urlTokens[0]}://${configs.remote_jenkins_user}:\$TOKEN@${urlTokens[1]}/buildWithParameters?token=${configs.remote_job_token}\\&UPSTREAM_JOB=${UPSTREAM_JOB}\\&UPSTREAM_BUILDNUMBER=${UPSTREAM_BUILDNUMBER}"
-            if (underUnix == true) {
-                sh curlCommand
+
+    if (configs["job"] != "") {
+        def params = []
+        params.add(string(name: 'UPSTREAM_JOB_NAME', value: env.JOB_NAME))
+        params.add(string(name: 'UPSTREAM_BUILD_NUMBER', value: String.valueOf(env.BUILD_NUMBER)))
+        for (def key in configs["parameters"].keySet()) {
+            if (configs["parameters"][key].startsWith("TEXT_")) {
+                def value = configs["parameters"][key].substring(5)
+                value = value.replaceAll(",", "\n")
+                params.add(text(name: key, value: value))
             }
             else {
-                bat curlCommand
+                params.add(string(name: key, value: configs["parameters"][key]))
             }
         }
+        print "Trigger params ${params}"
+        build job: configs["job"], parameters: params
+    }
+
+    if (configs["remote_url"] != "" && configs["remote_job"] != "") {
+        utils.pyExec(configs["actionName"], configs["stageName"], "TRIGGER_REMOTE", [])
     }
 }
 

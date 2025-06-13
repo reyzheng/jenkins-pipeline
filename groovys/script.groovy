@@ -1,7 +1,4 @@
 def init(stageName) {
-    def utils = load "utils.groovy"
-    //def actionName = utils.extractActionName(stageName)
-
     def defaultConfigs = [
         display_name: "",
         enable: true,
@@ -15,93 +12,47 @@ def init(stageName) {
         sshcredentials: ""
     ]
     def config = utils.commonInit(stageName, defaultConfigs)
-    config.settings.has_stashes = false
-
-    if (config.settings.enable == true) {
-        def filesToStash = []
-        for (def i=0; i<config.settings.types.size(); i++) {
-            if (config.settings.types[i] != "inline") {
-                filesToStash << config.settings.contents[i]
-            }
-        }
-        if (filesToStash.size() > 0) {
-            config.settings.has_stashes = true
-            dir (env.PF_PATH + 'scripts') {
-                stash name: "stash-script-${config.preloads.plainStageName}", includes: filesToStash.join(",")
-            }
-        }
-    }
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def shellScript(underUnix, dstFile, toolbox) {
-    if (dstFile.endsWith(".py")) {
-        def pythonExec = utils.getPython()
-        if (underUnix == true) {
-            sh "${pythonExec} ${dstFile}"
-        }
-        else {
-            bat "${pythonExec} ${dstFile}"
-        }
-        return
+def buildEnv(toolbox) {
+    if (toolbox != "") {
+        return "singularity exec ${toolbox}"
     }
-
-    if (underUnix == true) {
-        if (toolbox != "") {
-            toolbox = "singularity exec ${toolbox} "
-        }
-        def statusCode = sh script: "${toolbox}bash", returnStatus: true
-        if (statusCode == 0) {
-            sh "${toolbox}bash -xe '${dstFile}'"
-        }
-        else {
-            sh "${toolbox}sh -xe '${dstFile}'"
-        }
+    else if (env.PF_BUILD_ENV != "none") {
+        return utils.buildEnvPrefix(env.PF_BUILD_ENV, env.PF_BUILD_ENV_PARAMS)
     }
     else {
-        bat "\"${dstFile}\""
-    }
-}
-
-def shellCommand(command, underUnix, toolbox) {
-    if (underUnix == true) {
-        if (toolbox != "") {
-            toolbox = "singularity exec ${toolbox} "
-        }
-        sh toolbox + command
-    }
-    else {
-        bat command
+        return ""
     }
 }
 
 // actionConfig
-def func(pipelineAsCode, configs, preloads) {
+def func(stageName) {
+    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def underUnix = isUnix()
     def validScriptTypes = ["inline", "file", "source", "groovy"]
+    def toolbox = buildEnv(configs["toolbox"])
+    print "toolbox: ${toolbox}"
 
     if (configs.enable == false) {
-        print "Stage ${preloads.stageName} cancelld manually"
+        print "Stage ${stageName} cancelld manually"
         return
     }
 
-    def stageName = configs.display_name
-    if (stageName == "") {
-        stageName = preloads.stageName
+    def displayName = configs["display_name"]
+    if (displayName == "") {
+        displayName = stageName
     }
 
-    def reportStageName = stageName
+    def reportStageName = displayName
     if (env.BUILD_BRANCH) {
         reportStageName = reportStageName + " ${env.BUILD_BRANCH}"
     }
 
     try {
-        if (configs.has_stashes == true) {
-            dir ('.script') {
-                unstash "stash-script-${preloads.plainStageName}"
-            }
-        }
         for (def i=0; i<configs.types.size(); i++) {
             if (validScriptTypes.contains(configs.types[i]) == false) {
                 return
@@ -115,100 +66,54 @@ def func(pipelineAsCode, configs, preloads) {
                 }
             }
 
+            dir (".pf-${configs.plainStageName}") {
+                deleteDir()
+                writeFile file: "DUMMY", text: ""
+            }
             if (configs.types[i] == "inline") {
                 if (configs.sshcredentials == "") {
-                    shellCommand(configs.contents[i], underUnix, configs["toolbox"])
+                    utils.inlineScript(configs.contents[i], underUnix, toolbox)
                 }
                 else {
                     sshagent(credentials: [configs.sshcredentials]) {
-                        shellCommand(configs.contents[i], underUnix, configs["toolbox"])
+                        utils.inlineScript(configs.contents[i], underUnix, toolbox)
                     }
                 }
             }
             else {
-                def dstFile
-                if (underUnix == true) {
-                    dstFile = ".script/${configs.contents[i]}"
+                if (configs.sshcredentials == "") {
+                    utils.fileScript(underUnix, configs.types[i], configs.contents[i], toolbox, configs["sshcredentials"], ".pf-${configs.plainStageName}")
                 }
                 else {
-                    dstFile = ".script\\${configs.contents[i]}"
-                }
-                if (configs.types[i] == "source") {
-                    // TODO: support configs.types[i] == "." for sh/dash
-                    // notice: shebang should be written at first line
-                    sh """#!/bin/bash
-                        mypwd=\$PWD
-                        printenv > .private-source-before
-                        . ${dstFile}
-                        cd \$mypwd
-                        printenv > .private-source-after
-                    """
-                    def lines = sh(script: "diff -u .private-source-before .private-source-after | grep -E '^\\+'", returnStdout: true).trim()
-                    lines = lines.readLines().drop(1) // drop first line
-                    for (def line in lines) {
-                        if (line.startsWith("+")) {
-                            def tokens = line.split("=")
-                            if (tokens[0] == "+_" || tokens[0] == "+OLDPWD") {
-                                // skip self (printenv), OLDPWD
-                            }
-                            else {
-                                def varname = tokens[0].substring(1, tokens[0].length())
-                                def varvalue = tokens[1]
-
-                                // Note: BUILD_BRANCH prefix should be add to variable name,
-                                // or redundant variables will be declared
-                                if (env.BUILD_BRANCH != null) {
-                                    if (varname.startsWith("PIPELINEGLOBAL_")) {
-                                        varname = varname.substring(15)
-                                        print "Export general pipeline env. variables(aux.): ${varname} ${varvalue}"
-                                        env."$varname" = varvalue
-                                    }
-                                    varname = "BR${env.BUILD_BRANCH}_${varname}"
-                                    print "Export parallel-build pipeline env. variables: ${varname} ${varvalue}"
-                                    env."$varname" = varvalue
-                                }
-                                else {
-                                    print "Export general pipeline env. variables: ${varname} ${varvalue}"
-                                    env."$varname" = varvalue
-                                }
-                            }
-                        }
-                    }
-                }
-                else if (configs.types[i] == "groovy") {
-                    def externalMethod = load(dstFile)
-                    externalMethod.func()
-                }
-                else if (configs.types[i] == "file") {
-                    if (configs.sshcredentials == "") {
-                        shellScript(underUnix, dstFile, configs["toolbox"])
-                    }
-                    else {
-                        sshagent(credentials: [configs.sshcredentials]) {
-                            shellScript(underUnix, dstFile, configs["toolbox"])
-                        }
+                    sshagent(credentials: [configs.sshcredentials]) {
+                        utils.fileScript(underUnix, configs.types[i], configs.contents[i], toolbox, configs["sshcredentials"], ".pf-${configs.plainStageName}")
                     }
                 }
             }
+            utils.archiveStageArtifacts(configs["stageName"])
+            dir (".pf-${configs.plainStageName}") {
+                // export environment variables generated in py
+                utils.exportEnv()
+            }
         }
 
-        if (env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS") {
-            env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS" += "$reportStageName SUCCESS;"
+        if (env."PIPELINE_AS_CODE_STAGE_${displayName}_RESULTS") {
+            env."PIPELINE_AS_CODE_STAGE_${displayName}_RESULTS" += "$reportStageName SUCCESS;"
         }
         else {
-            env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS" = "$reportStageName SUCCESS;"
+            env."PIPELINE_AS_CODE_STAGE_${displayName}_RESULTS" = "$reportStageName SUCCESS;"
         }
     }
     catch (e) {
         if (configs["failfast"] == true) {
-            error(message: "${configs.stageName} " + e)
+            error(message: "${stageName} " + e)
         }
-        unstable(message: "${preloads.stageName} is unstable " + e)
-        if (env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS") {
-            env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS" += "$reportStageName UNSTABLE;"
+        unstable(message: "${stageName} is unstable " + e)
+        if (env."PIPELINE_AS_CODE_STAGE_${displayName}_RESULTS") {
+            env."PIPELINE_AS_CODE_STAGE_${displayName}_RESULTS" += "$reportStageName UNSTABLE;"
         }
         else {
-            env."PIPELINE_AS_CODE_STAGE_${stageName}_RESULTS" = "$reportStageName UNSTABLE;"
+            env."PIPELINE_AS_CODE_STAGE_${displayName}_RESULTS" = "$reportStageName UNSTABLE;"
         }
     }
 }

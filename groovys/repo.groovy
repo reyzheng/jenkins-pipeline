@@ -24,51 +24,83 @@ def init(stageName) {
     return config
 }
 
-def call(Map repoConfig = [:], plainStageName) {
-    // TODO: duplicated def defaultConfig
-    def defaultConfig = [
-        scm_dst: "",
-        repo_path: "repo",
-        scm_credentials: "",
-        scm_urls: "",
-        scm_branchs: "master",
-        scm_repo_mirror: "",
-        scm_repo_reference: "",
-        scm_repo_manifest_files: "default.xml",
-        scm_repo_manifest_platforms: "linux",
-        scm_repo_manifest_groups: "",
-        scm_repo_manifest_notags: true,
-        scm_repo_manifest_currentbranchs: true,
-        scm_repo_manifest_depths: 1,
+def cliRepo(defaultConfig, repoCommand, repoUser, repoKey, repoInitParams, repoSyncParams, underUnix) {
+    // Sample
+    // ssh -p 29418 $REPO_USER@psp.sdlc.rd.realtek.com gerrit version
+    def repoExists = fileExists '.repo'
+    def gitSSHCommand = ''
+    if (repoUser != '') {
+        if (underUnix) {
+            gitSSHCommand = "GIT_SSH_COMMAND=\"ssh -l ${repoUser} -i ${repoKey}\" "
+        }
+        else {
+            gitSSHCommand = "set GIT_SSH_COMMAND=ssh -l ${repoUser} -i ${repoKey}&&"
+        }
+    }
+    if (defaultConfig.scm_repo_mirror.trim() != "" && repoExists == true) {
+        // sync only if mirror mode and .repo exists
+        def cmd = "${gitSSHCommand}${repoCommand} sync -d --force-sync --jobs=4 ${repoSyncParams}"
+        utils.inlineScript(cmd, underUnix, "")
+    }
+    else {
+        def cmd
+        cmd = "${gitSSHCommand}${repoCommand} init -u ${defaultConfig.scm_urls} ${repoInitParams}"
+        utils.inlineScript(cmd, underUnix, "")
+        cmd = "${gitSSHCommand}${repoCommand} sync -v -d --force-sync --jobs=4 ${repoSyncParams}"
+        //env.GIT_SSH_COMMAND = gitSSHCommand
+        //cmd = "${repoCommand} sync -v -d --force-sync --jobs=4 ${repoSyncParams}"
+        utils.inlineScript(cmd, underUnix, "")
+    }
+}
 
-        // hidden parameters
-        preserve: false
-    ]
-    defaultConfig << repoConfig
-
+def call(defaultConfig, plainStageName) {
     def dst = defaultConfig["scm_dst"]
     if (defaultConfig.scm_repo_mirror != "") {
         // scm_repo_mirror has higher priority
         dst = defaultConfig.scm_repo_mirror
     }
 
+    def underUnix = isUnix()
     dir (dst) {
-        if (dst != "") {
+        print("repo: WORKSPACE " + WORKSPACE)
+        print("repo: pwd " + pwd())
+        if (WORKSPACE != pwd()) {
+        //if (dst != "") {
             if (defaultConfig["preserve"] == false || defaultConfig["preserve"] == "false") {
                 print "repo: clean source"
                 deleteDir()
             }
-        }
-        if (defaultConfig.scm_credentials != "" || defaultConfig.scm_repo_mirror != "") {
-            // Credentials, --mirror is invalid in Jenkins REPO plugin
-            //def repoCommand = defaultConfig.repo_path
-            dir (".repo-tool") {
-                deleteDir()
-                sh """
-                    git clone https://mirror.rtkbf.com/gerrit/repo -b stable .
-                """
+            else {
+                print "repo: preserve source"
+                if (underUnix) {
+                    sh "pwd && ls -al"
+                }
+                else {
+                    bat "dir"
+                }
             }
-            def repoCommand = ".repo-tool/repo"
+        }
+
+        def repoCLI = false
+        // REPO plugin is not supported on windows (ctcsoc-win01, ctcsoc-win01-mingw tested)
+        if (defaultConfig["scm_credentials"] != "" \
+                || defaultConfig["scm_repo_mirror"] != "" \
+                || defaultConfig["repo_path"] != "repo" \
+                || underUnix == false) {
+            repoCLI = true
+        }
+        if (repoCLI == true) {
+            // Credentials, --mirror is invalid in Jenkins REPO plugin
+            def repoCommand = defaultConfig["repo_path"]
+            if (defaultConfig["repo_path"] == "repo" && underUnix) {
+                dir (".repo-tool") {
+                    deleteDir()
+                    sh "GIT_SSL_NO_VERIFY=true git clone https://mirror.rtkbf.com/gerrit/repo -b stable ."
+                    repoCommand = ".repo-tool/repo"
+                }
+            }
+            print "repoCommand: ${repoCommand}"
+
             def repoInitParams = ""
             def repoSyncParams = ""
             if (defaultConfig.scm_branchs.trim() == "") {
@@ -103,24 +135,24 @@ def call(Map repoConfig = [:], plainStageName) {
                 }
                 repoInitParams += "--depth=${defaultConfig.scm_repo_manifest_depths} "
             }
-            sshagent(credentials: [defaultConfig.scm_credentials]) {
-                // Sample
-                // ssh -p 29418 $REPO_USER@psp.sdlc.rd.realtek.com gerrit version
-                def repoExists = fileExists '.repo'
-                if (defaultConfig.scm_repo_mirror.trim() != "" && repoExists == true) {
-                    // sync only if mirror mode and .repo exists
-                    sh """
-                        ${repoCommand} sync -d --force-sync --jobs=4 ${repoSyncParams}
-                    """
+
+            /*
+            if (underUnix == true) {
+                sshagent(credentials: [defaultConfig.scm_credentials]) {
+                    cliRepo(defaultConfig, repoCommand, repoInitParams, repoSyncParams, underUnix)
                 }
-                else {
-                    sh """
-                        echo 'current directory'
-                        pwd && ls -a
-                        ${repoCommand} init -u ${defaultConfig.scm_urls} ${repoInitParams}
-                        ${repoCommand} sync -d --force-sync --jobs=4 ${repoSyncParams}
-                    """
+            }
+            else {
+                cliRepo(defaultConfig, repoCommand, repoInitParams, repoSyncParams, underUnix)
+            }
+            */
+            if (defaultConfig["scm_credentials"] != '') {
+                withCredentials([sshUserPrivateKey(credentialsId: defaultConfig["scm_credentials"], usernameVariable: "REPO_USER", keyFileVariable: "REPO_KEY")]) {
+                    cliRepo(defaultConfig, repoCommand, REPO_USER, REPO_KEY, repoInitParams, repoSyncParams, underUnix)
                 }
+            }
+            else {
+                cliRepo(defaultConfig, repoCommand, '', '', repoInitParams, repoSyncParams, underUnix)
             }
         }
         else {
@@ -145,16 +177,14 @@ def call(Map repoConfig = [:], plainStageName) {
     if (dst != "") {
         pyCmd += " -d ${dst}"
     }
-    if (isUnix()) {
-        sh pyCmd
+    if (underUnix == true && defaultConfig.scm_credentials != "") {
+        sshagent(credentials: [defaultConfig.scm_credentials]) {
+            utils.inlineScript(pyCmd, underUnix, "")
+        }
     }
     else {
-        bat pyCmd
+        utils.inlineScript(pyCmd, underUnix, "")
     }
-}
-
-def func(pipelineAsCode, stageConfigs, stagePreloads) {
-    call(stageConfigs)
 }
 
 return this

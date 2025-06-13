@@ -1,0 +1,36 @@
+#### Function Definition
+File: $file_name
+Function: $function_name
+```
+$function_content
+```
+
+#### Coverity Defects Analysis
+Analyze the provided function and identify any **newly introduced Coverity defects**.
+1. Defect Identification Guidelines:
+Check for the following types of defects:
+$CODE_ANALYSIS_RULES
+For each defect, provide:
+  - **Type**: Category of the defect (e.g., null pointer dereference, uninitialized variable).
+  - **Location: Exact line number(s)** where the defect occurs.
+  - **Risk**: The potential impact of the defect.
+2. **Full Function Correction (Strict Formatting Rules Apply)**:
+If defects are found, **output the entire corrected function** while **preserving its exact format**.
+⚠ WARNING: **STRICT RULES — MUST BE FOLLOWED EXACTLY:**
+✔ REQUIRED: **Output the full function**—do **not omit or summarize any lines.**
+✖ DO NOT: **NO placeholders** (e.g., [...], "/* rest of the function */", "// unchanged lines omitted").
+✔ REQUIRED: **Only apply necessary fixes**—do **not** change function structure, style, or formatting.
+✔ REQUIRED: **Preserve indentation and spacing exactly as in the original function** (this includes tabs vs. spaces).
+✔ REQUIRED: **Function content must remain byte-for-byte identical** for unchanged lines.
+[ALERT] **STRICT ENFORCEMENT**: If GPT modifies formatting **(adds spaces, alters indentation, or changes line structure unnecessarily)**, the output **will be rejected**.
+**If no defects are found**, explicitly state: "**No changes necessary.**"
+---
+${GPT_OUTPUT_FORMAT}
+---
+#### Output Compliance Requirements (STRICT RULES)
+⚠ WARNING: **GPT must strictly follow these guidelines to ensure correct YAML and function formatting:**
+- **Indentation & Spacing: Do NOT modify the original formatting** (no extra/missing spaces, no changes in indentation).
+- **Preserve Tabs vs. Spaces: DO NOT** convert tabs to spaces or vice versa. The function's formatting must be identical.
+- **No Placeholder Text:** The full function must be **explicitly** included, with **no omissions or summarizations**.
+- **Correct YAML Formatting:** Ensure valid YAML output with **proper quoting** for strings containing special characters.
+[ALERT] **VIOLATION CONSEQUENCES**: Any formatting deviation—**extra spaces, altered indentation, missing lines—renders the output INVALID**. GPT must **strictly** preserve the original format.

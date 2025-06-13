@@ -10,34 +10,34 @@ def init(stageName) {
         scriptableParams: []
     ]
 
-    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
-
-    dir ('pipeline_scripts') {
-        stash name: "stash-script-${config.preloads.plainStageName}", includes: 'Earthfile'
-    }
+    utils.finalizeInit(stageName, config)
 
     return config
 }
 
-def func(pipelineAsCode, configsRaw, preloads) {
+//def func(pipelineAsCode, configsRaw, preloads) {
+def func(stageName) {
     if (isUnix() == false) {
-        print "Only available "
+        print "Only available under linux"
         return
     }
+    def pythonExec = utils.getPython()
+    def translateCmd = "${pythonExec} ${env.PF_ROOT}/pipeline_scripts/utils.py -f ${env.PF_ROOT}/settings/${stageName}_config.json -c TRANSLATE_CONFIG"
+    if (isUnix()) {
+        sh translateCmd
+    }
+    else {
+        bat translateCmd
+    }
+    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
 
-    unstash name: "stash-script-utils"
-    def utils = load "utils.groovy"
-    def configs = [:]
-    utils.unstashScriptedParamScripts(preloads.plainStageName, configsRaw, configs)
-
-    unstash name: "stash-script-${preloads.plainStageName}"
     print "Build earthly image and run"
     sh """
         randompass=`cat /dev/urandom | tr -dc A-Za-z0-9 | head -c 8`
         echo "random password \${randompass}"
-        sed -i \"s/    RUN echo.*/    RUN echo 'root:\${randompass}' | chpasswd/g\" Earthfile
-        sed -i \"s/    SAVE IMAGE.*/    SAVE IMAGE ${configs.container_name}:latest/g\" Earthfile
+        sed -i \"s/    RUN echo.*/    RUN echo 'root:\${randompass}' | chpasswd/g\" ${env.PF_ROOT}/scripts/Earthfile
+        sed -i \"s/    SAVE IMAGE.*/    SAVE IMAGE ${configs.container_name}:latest/g\" ${env.PF_ROOT}/scripts/Earthfile
         #earthly .pf-earthly+docker
         earthly +docker
         timeout 600 docker run -p 2222:22 --rm earthly-debug

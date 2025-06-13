@@ -16,7 +16,7 @@ def init(stageName) {
 def func(stageName) {
     def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
 
-    withCredentials([string(credentialsId: config["bdba_credentials"], variable: 'BDBA_TOKEN')]) {
+    withCredentials([string(credentialsId: configs["bdba_credentials"], variable: 'BDBA_TOKEN')]) {
         utils.pyExec(configs["actionName"], configs["stageName"], "", [])
     }
 }

@@ -1,0 +1,26 @@
+Please analyze the following C source code and add clear, concise, and accurate comments. The comments should:
+
+1. Explain what each line or block of code is doing.
+2. Clarify the purpose of the logic.
+3. Highlight any nuances or important details that aid understanding.
+
+Ensure that:
+- The original structure and formatting of the code is preserved.
+- Comments are helpful for someone unfamiliar with the code.
+- All output is strictly valid YAML.
+- The code is returned inside a YAML literal block (`|`), properly indented.
+- Do not include markdown formatting or explanations outside the YAML block.
+
+Input:
+File: ${FILE_NAME}
+Original Code:
+```c
+${SOURCE_CODE}
+```
+---
+Expected Output Format (YAML):
+```yaml
+output:
+  file: "{{FILE_NAME}}"
+  output_code: |
+    [The code with added comments goes here. Maintain correct indentation and no markdown fences.]
