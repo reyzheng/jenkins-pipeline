@@ -43,6 +43,7 @@ def init(stageName) {
 }
 
 def scm_checkout(vars, i) {
+    def utils = load "${PF_ROOT}/utils.groovy"
     echo "checkout repository ${vars.scm_types[i]} ${vars.scm_urls[i]}"
 
     //if (env.PF_BUILD_ENV.startsWith("slurm:")) {
