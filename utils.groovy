@@ -155,7 +155,7 @@ def unstashPipelineFramework() {
             // call git clone to avoid this issue
             // git clone jenkins-pipeline should be called prior to unstash name: "stash-pf-config", to avoid git "not an empty directory" error
             if (isUnix() == true) {
-                unstash name: "stash-pf-framework"
+                //unstash name: "stash-pf-framework"
             }
             else {
                 print "git clone (workaround)"
@@ -174,7 +174,7 @@ def unstashPipelineFramework() {
             //unstash name: "stash-pf-config"
             copyArtifacts(
                 projectName: "${JOB_NAME}",
-                filter: 'Jenkinsfile*,settings/**,scripts/**',
+                filter: 'Jenkinsfile*,settings/**,scripts/**,utils.groovy,groovys/**,pipeline_scripts/**,templates/**,rtk_coverity/**,vendor/**',
                 selector: specific("${BUILD_NUMBER}")
             )
             print "unstash stash-pf-config finished (utils)"
