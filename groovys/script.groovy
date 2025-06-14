@@ -19,6 +19,7 @@ def init(stageName) {
 }
 
 def buildEnv(toolbox) {
+    def utils = load "${PF_ROOT}/utils.groovy"
     if (toolbox != "") {
         return "singularity exec ${toolbox}"
     }
