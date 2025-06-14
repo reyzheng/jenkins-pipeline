@@ -18,7 +18,7 @@ def init(stageName) {
     return null
 }
 
-def func(stageName) {
+def call(stageName) {
 }
 
 return this

@@ -100,7 +100,7 @@ def scm_checkout(vars, i) {
     }
 }
 
-def func(stageName) {
+def call(stageName) {
     def stageConfigs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def plainStageName = stageConfigs["plainStageName"]
 
