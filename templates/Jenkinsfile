@@ -118,10 +118,7 @@ def pascCleanWs() {
         }
     }
     print "pascCleanWs: clean WS, excludes: " + excludes
-    cleanWs deleteDirs: true, \
-            notFailBuild: true, \
-            patterns: excludes, \
-            externalDelete: 'rm -rf *'  // More efficient than default
+    cleanWs deleteDirs: true, notFailBuild: true, patterns: excludes
 }
 
 pipeline {
