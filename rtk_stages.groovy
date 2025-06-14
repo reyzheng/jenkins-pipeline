@@ -1,9 +1,5 @@
 import groovy.transform.Field
 
-
-@Field modules = [:]
-@Field utils
-
 // GLOBAL
 //   env.PF_FRAMEWORK_URL (defined in Jenkinsfile.appetizer)
 //   env.PF_FRAMEWORK_PROD_BRANCH (defined in Jenkinsfile.appetizer)
@@ -82,6 +78,7 @@ def checkConfigPath() {
 }
 
 def translateGlobalSettings() {
+    def utils = load "utils.groovy"
     def utilsPath = "${env.PF_PATH}pipeline_scripts/utils.py"
     def utilsUnderPFPath = fileExists utilsPath
     if (utilsUnderPFPath == false) {
@@ -106,6 +103,7 @@ def translateGlobalSettings() {
 }
 
 def loadGlobalSettings() {
+    def utils = load "utils.groovy"
     def defaultConfigs = [
         clean_ws: true,
         preserve_source: false,
@@ -214,12 +212,12 @@ def postStage(postStatus) {
     print "postStage: PF_MAIN_AGENT ${env.PF_MAIN_AGENT}"
     if (env.NODE_NAME == env.PF_MAIN_AGENT) {
         action = utils.loadCoreAction(env.PF_ROOT, "post")
-        action.execute(modules, postStatus)
+        action.execute(null, postStatus)
     }
     else {
         node(env.PF_MAIN_AGENT) {
             action = utils.loadCoreAction(env.PF_ROOT, "post")
-            action.execute(modules, postStatus)
+            action.execute(null, postStatus)
         }
     }
 }
@@ -246,6 +244,7 @@ def loadCoreActions() {
 }
 
 def loadUserConfig(configFileName) {
+    def utils = load "utils.groovy"
     // settings/build-dummy_config.groovy -> settings "build-dummy_config" groovy
     def configName = configFileName.split(/\\|\/|\./)
     configName = configName[configName.size() - 2]
@@ -299,6 +298,7 @@ def loadUserConfig(configFileName) {
 }
 
 def loadUserConfigs() {
+    def utils = load "utils.groovy"
     def fileSeparator = "\\"
     if (isUnix()) {
         fileSeparator = "/"
@@ -339,37 +339,9 @@ def loadUserConfigs() {
     }
 }
 
-def pascCleanWs() {
-    if (isUnix() == true) {
-        def whoami = sh(script: "whoami", returnStdout: true).trim()
-        if (whoami == "root") {
-            error("Do not run jenkins agent as root")
-        }
-    }
-
-    if (env.PF_CLEAN_WS == "false") {
-        print "pascCleanWs: skip"
-        return
-    }
-    def excludes = [[pattern: "${env.PF_ROOT}/**", type: "EXCLUDE"]]
-    if (env.PF_PRESERVE_SOURCE == "true") {
-        if (env.PF_SOURCE_DSTS) {
-            def scmDsts = env.PF_SOURCE_DSTS.split(",")
-            for (def j=0; j<scmDsts.size(); j++) {
-                def exclude = [:]
-                exclude.pattern = "${scmDsts[j]}/**"
-                exclude.type = "EXCLUDE"
-                excludes << exclude
-            }
-        }
-    }
-    print "pascCleanWs: clean WS, excludes: " + excludes
-    cleanWs deleteDirs: true, notFailBuild: true, patterns: excludes
-}
-
 def init() {
     def underUnix = isUnix()
-    utils = load "utils.groovy"
+    def utils = load "utils.groovy"
     // store exec. result at each stage
     env.PIPELINE_AS_CODE_STAGE_BUILD_RESULTS = ""
     env.PIPELINE_AS_CODE_STAGE_TEST_RESULTS = ""
@@ -411,228 +383,31 @@ def init() {
     // clean workspace
     // stash utils before clean workspace
     // re-write logParserRule after initialization
-    stash name: 'stash-pf-framework', includes: "groovys/**,pipeline_scripts/**,templates/**,rtk_coverity/**,vendor/**"
+    stash name: 'stash-pf-framework', includes: "utils.groovy,groovys/**,pipeline_scripts/**,templates/**,rtk_coverity/**,vendor/**"
     dir (env.PF_PATH) {
         stash name: 'stash-pf-config', includes: "Jenkinsfile*,settings/**,scripts/**"
     }
     // note: for Jenkinsfile.restartable
     // iterateStages() would not be called in Jenkinsfile.restartable
     utils.unstashPipelineFramework()
-
-    pascCleanWs()
-}
-
-def iterateToFile(stages, sourceOnly) {
-	if (! utils) {
-		utils = load 'utils.groovy'
-	}
-    def stageConfig
-    def content = ""
-    if (stages.size() > 0) {
-        for (def stageIdx=0; stageIdx<stages.size(); stageIdx++) {
-            def stageName = stages[stageIdx]
-			def actionName = utils.extractActionName(stageName)
-            if (sourceOnly == true && actionName != "source") {
-                continue
-            }
-
-            def realStageName = stageName
-            try {
-                dir (env.PF_PATH + 'settings') {
-                    stageConfig = readJSON file: "${stageName}_config.json"
-                    if (stageConfig.containsKey("display_name")) {
-                        realStageName = stageConfig["display_name"]
-                    }
-                }
-            }
-            catch(e) {
-                print "iterateToFile exception: " + e
-            }
-
-            if (actionName == "composition" && stageConfig.run_type == "SEQUENTIAL_SPLIT") {
-                for (def i=0; i<stageConfig.stages.size(); i++) {
-                    content += "stage('$realStageName-$i') {\n"
-                    content += "    steps {\n"
-                    content += "        script {\n"
-                    content += "            if (!pf) {\n"
-                    content += "                pf = pfInit(true)\n";
-                    content += "            }\n"
-                    content += "            pf.startCompositionSplit('$stageName', $i)\n"
-                    content += "        }\n"
-                    content += "    }\n"
-                    content += "}\n"
-                }
-            }
-            else {
-                def stageNode = false
-                content += "stage('$realStageName') {\n"
-                if (stageConfig.containsKey("node") == true && stageConfig["node"] != "") {
-                    if (actionName == "composition") {
-                        // skip node config in composition_config
-                        // node config is adopted in parallelBuild()
-                        print("composition, skip node config in composition_config")
-                    }
-                    else {
-                        stageNode = true
-                        if (stageConfig["node"].startsWith("docker:") == true) {
-                            def dockerImage = stageConfig["node"].split(":")
-                            dockerImage = dockerImage[1]
-                            content += "agent {\n"
-                            content += "    docker {\n"
-                            content += "        image \"${dockerImage}\"\n"
-                            if (stageConfig.containsKey("node_args") == true && stageConfig["node_args"] != "") {
-                                content += "        args \"" + stageConfig["node_args"] + "\"\n"
-                            }
-                            content += "        reuseNode true\n"
-                            content += "    }\n"
-                            content += "}\n"
-                        }
-                        else {
-                            content += "agent {\n"
-                            content += "    label \"${stageConfig['node']}\"\n"
-                            content += "}\n"
-                        }
-                    }
-                }
-                def userDefinedStageOptions = fileExists "${env.PF_PATH}scripts/${stageName}.options"
-                if (userDefinedStageOptions == true) {
-                    content += readFile file: "${env.PF_PATH}scripts/${stageName}.options"
-                }
-                content += "    steps {\n"
-                def credLines = ['', '']
-                def userDefinedCredentials = fileExists "${env.PF_PATH}scripts/${stageName}.creds"
-                if (userDefinedCredentials == true) {
-                    def fpCreds = readFile "${env.PF_PATH}scripts/${stageName}.creds"
-                    credLines = fpCreds.readLines()
-                }
-                content += credLines[0]
-                content += "        script {\n"
-                if (stageNode == true) {
-                    content += "            def pfTmp = pfInit(false)\n";
-                    if (actionName == "composition") {
-                        content += "        pfTmp.startComposition('$stageName')\n"
-                    }
-                    else {
-                        content += "        pfTmp.execStage('$actionName', '$stageName')\n"
-                    }
-                }
-                else {
-                    content += "            if (!pf) {\n"
-                    content += "                pf = pfInit(true)\n";
-                    content += "            }\n"
-                    if (actionName == "composition") {
-                        content += "            pf.startComposition('$stageName')\n"
-                    }
-                    else {
-                        content += "            pf.execStage('$actionName', '$stageName')\n"
-                    }
-                }
-                content += "        }\n"
-                content += credLines[1]
-                content += "    }\n"
-                content += "}\n"
-            }
-        }
-    }
-	return content
-}
-
-def execStage(actionName, stageName) {
-    print "execStage: ${stageName}(${actionName})"
-    //utils.resetPython()
-    def coreActions = env.PF_CORE_ACTIONS.split(",")
-    if (coreActions.contains(actionName)) {
-        def action = utils.loadCoreAction(env.PF_ROOT, actionName)
-        action.func(stageName)
-    }
-    else {
-        def action = utils.loadUserAction(env.PF_ROOT, actionName)
-        try {
-            def configExists = fileExists "${env.PF_ROOT}/settings/${stageName}_config.json"
-            if (configExists) {
-                print "execStage: user action with config"
-                def stageConfig = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
-                action.func(modules, stageConfig, null)
-            }
-            else {
-                print "execStage: user action without config"
-                action.func()
-            }
-        }
-        catch (e) {
-            error(message: "${stageName} is unstable " + e)
-        }
-    }        
+    utils.pascCleanWs()
 }
 
 def _format(withNodeLabel) {
     checkConfigPath()
-
-    def globalConfig
-    dir (env.PF_PATH + 'settings') {
-        globalConfig = readJSON file: 'global_config.json'
-    }
-    if (! utils) {
-        utils = load 'utils.groovy'
-    }
-
-    def nodeSection
-    def nodeLabel = ""
-    if (withNodeLabel) {
-        if (globalConfig.nodes.size() > 0) {
-            nodeLabel = globalConfig.nodes[0]
-        }
-        nodeSection = "def nodeLabel='$nodeLabel'\n"
+    def utils = load 'utils.groovy'
+    def pythonExec = utils.getPython()
+    def formatScript = "${pythonExec} pipeline_scripts/utils.py -f ${env.PF_PATH}/settings/global_config.json -c FORMAT_JENKINSFILE -n ${withNodeLabel}"
+    if (isUnix()) {
+        sh formatScript
     }
     else {
-        nodeSection = ""
+        bat formatScript
     }
-    def stages = globalConfig.stages
-    def initHalf
-    def topHalf
-    def optionHalf
-    def triggersHalf
-    def startHalf
-    def bottomHalf
-    dir ('pipeline_scripts') {
-        initHalf = readFile file: 'Jenkinsfile.inithalf'
-        if (withNodeLabel) {
-            print ("_format: user defined agent ${nodeLabel}")
-            print ("_format: current agent ${env.NODE_LABELS}")
-            if (nodeLabel == "" || env.NODE_LABELS.contains(nodeLabel)) {
-                topHalf = readFile file: 'Jenkinsfile.tophalf.none'
-            }
-            else {
-                topHalf = readFile file: 'Jenkinsfile.tophalf'
-            }
-        }
-        else {
-            topHalf = readFile file: 'Jenkinsfile.tophalf.none'
-        }
-        optionHalf = readFile file: "Jenkinsfile.options"
-        triggersHalf = readFile file: "Jenkinsfile.triggers"
-        startHalf = readFile file: "Jenkinsfile.starthalf"
-        bottomHalf = readFile file: 'Jenkinsfile.bottomhalf'
+    dir ('.pf-global') {
+        stash name: 'pf-global-parallelinfo', includes: 'parallelInfo.json'
+        env.PF_GLOBAL_PARALLELINFO = "1"
     }
-    dir (env.PF_PATH + 'scripts') {
-        def userDefinedOptions = fileExists "Jenkinsfile.options"
-        if (userDefinedOptions == true) {
-            optionHalf = readFile file: "Jenkinsfile.options"
-        }
-        def userDefinedTriggers = fileExists "Jenkinsfile.triggers"
-        if (userDefinedTriggers == true) {
-            triggersHalf = readFile file: "Jenkinsfile.triggers"
-        }
-    }
-    def sourceOnly = false
-    if (globalConfig.dagger) {
-        sourceOnly = true
-    }
-    def content = iterateToFile(stages, sourceOnly)
-
-    print "Jenkinsfile generated"
-    print nodeSection + initHalf + topHalf + optionHalf + triggersHalf + startHalf + content + bottomHalf
-    writeFile file: 'Jenkinsfile.restartable', text: nodeSection + initHalf + topHalf + optionHalf + triggersHalf + startHalf + content + bottomHalf
 }
 
 def formatmb() {
@@ -674,374 +449,6 @@ def format() {
         env.PF_FRAMEWORK_DEV_BRANCH = "develop-python"
     }
     _format(true)
-}
-
-def iterateStages(stages, unstashPF) {
-    if (unstashPF == true) {
-        utils.unstashPipelineFramework()
-    }
-    if (stages.size() > 0) {
-        for (def stageIdx=0; stageIdx<stages.size(); stageIdx++) {
-            if (currentBuild.result == 'ABORTED') {
-                print "iterateStages: ABORTED"
-                return //this will exit the pipeline
-            }
-
-            def stageName = stages[stageIdx]
-            print "iterateStages: stage $stageName"
-            def actionName = utils.extractActionName(stageName)
-
-            def stageConfig = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
-            def stageDisplayName = stageName
-            try {
-                if (stageConfig.display_name && stageConfig.display_name != "") {
-                    stageDisplayName = stageConfig.display_name
-                }
-            }
-            catch (e) {
-            }
-
-            if (actionName == "composition") {
-                startComposition(stageName)
-            }
-            else {
-                if (stageConfig.containsKey("stage_lock") && stageConfig["stage_lock"] == true) {
-                    lock(stageDisplayName) {
-                        stage(stageDisplayName) {
-                            execStage(actionName, stageName)
-                        }
-                    }
-                }
-                else {
-                    stage(stageDisplayName) {
-                        execStage(actionName, stageName)
-                    }
-                }
-            }
-        }
-    }	
-}
-
-def escapedBashVariablename(str) {
-    def ret = str
-    ret = ret.replaceAll("\\-", "dash")
-    ret = ret.replaceAll("\\.", "dot")
-    ret = ret.replaceAll("/", "slash")
-    return ret
-}
-
-def generateCustomWS(jobName, stageName) {
-    def normalizedPath
-    def customWS
-
-    if (isUnix()) {
-        normalizedPath = jobName.replaceAll("\\\\", "/")
-    }
-    else {
-        normalizedPath = jobName.replaceAll("/", "\\\\")
-    }
-    print "generateCustomWS: normalizedPath, ${normalizedPath}"
-
-    stageName = stageName.replaceAll("/", "_")
-    // do not modify the workspace naming rules, fixed workspace name is necessary for cn2sd5
-    if ((isUnix() == false && stageName.length() > 32) || env.PF_SHORT_WORKSPACE) {
-        writeFile file: ".pf-stagename", text: stageName
-        def shasum = sha1 file: ".pf-stagename"
-        shasum = shasum.substring(0, 8)
-        print("generateCustomWS: map ${stageName} to ${shasum}")
-        stageName = shasum
-    }
-
-    if (env.WORKSPACE.indexOf("${normalizedPath}@") > 0) {
-        customWS = env.WORKSPACE.substring(0, env.WORKSPACE.indexOf("${normalizedPath}@") + normalizedPath.length()) + "@${stageName}"
-    }
-    else if (env.WORKSPACE.indexOf("_job_") > 0) {
-        // normalizedPath may not be presented on windows
-        customWS = env.WORKSPACE.substring(0, env.WORKSPACE.lastIndexOf("_job_")) + "@${stageName}"
-    }
-    else {
-        customWS = env.WORKSPACE + "@${stageName}"
-    }
-    customWS = customWS.replaceAll("@", "at")
-
-    return customWS
-}
-
-def parallelBuildMulti(stages, nodeNames) {
-    def nodes = nodeNames.split(',')
-
-    def parallelInfo = [:]
-    parallelInfo.branches = []
-    def customWS
-    def combinationEnvs = []
-    def jobs = [:]
-    for (def multiIdx=0; multiIdx<stages.size(); multiIdx++) {
-        def nodeName
-        if (multiIdx >= nodes.size()) {
-            nodeName = nodes[nodes.size() - 1]
-        }
-        else {
-            nodeName = nodes[multiIdx]
-        }
-        def subStages = stages[multiIdx]
-        def stageName = "PF_MULTI${multiIdx}"
-        print "parallelBuildMulti: ${stageName} " + subStages + " (${nodeName})"
-        combinationEnvs[multiIdx] = []
-        combinationEnvs[multiIdx] << "BUILD_BRANCH=" + escapedBashVariablename(stageName)
-        combinationEnvs[multiIdx] << "BUILD_BRANCH_RAW=" + stageName
-        parallelInfo.branches << escapedBashVariablename(stageName)
-        def envvar = combinationEnvs[multiIdx]
-        if (nodeName == "" || env.NODE_LABELS.contains(nodeName)) {
-            jobs[stageName] = {
-                // check WORKSPACE ${JOB_NAME}@n or ${JOB_NAME}_job_n, reference: parallelBuild()
-                if (env.WORKSPACE.indexOf("${JOB_NAME}@") > 0) {
-                    customWS = env.WORKSPACE.substring(0, env.WORKSPACE.indexOf("${JOB_NAME}@") + JOB_NAME.length()) + "@${stageName}"
-                }
-                else if (env.WORKSPACE.indexOf("${JOB_NAME}_job_") > 0) {
-                    customWS = env.WORKSPACE.substring(0, env.WORKSPACE.indexOf("${JOB_NAME}_job_") + JOB_NAME.length()) + "@${stageName}"
-                }
-                else {
-                    customWS = env.WORKSPACE + "@${stageName}"
-                }
-
-                print "Set parallel build WS: ${customWS}"
-                ws (customWS) {
-                    withEnv(envvar) {
-                        stage(stageName) {
-                            pascCleanWs()
-                            iterateStages(subStages, true)
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            jobs[stageName] = {
-                // job could not be paralleled if fixed stageName applied, like stage("paralleBuild")
-                node(nodeName) {
-                    customWS = generateCustomWS(JOB_NAME, stageName)
-                    print "Set parallel build WS: ${customWS}"
-                    ws (customWS) {
-                        withEnv(envvar) {
-                            stage(stageName) {
-                                pascCleanWs()
-                                iterateStages(subStages, true)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    dir ('.pf-global') {
-        writeJSON file: 'parallelInfo.json', json: parallelInfo
-        stash name: 'pf-global-parallelinfo', includes: 'parallelInfo.json'
-        env.PF_GLOBAL_PARALLELINFO = "1"
-    }
-
-    stage('Parallel-Multi') {
-        parallel jobs
-    }
-}
-
-def parallelBuild(parallelParameters, parallelExcludes, stages, nodeName, cleanWS) {
-    def parallelParams = []
-    def parallelValues = [:]
-    for (def key in parallelParameters.keySet()) {
-        parallelParams << key
-        parallelValues[key] = parallelParameters."${key}"
-    }
-    def totalCombinations = 1
-    def combinations = []
-    def combinationEnvs = []
-    for (def i=0; i<parallelParams.size(); i++) {
-        def parallelParam = parallelParams[i]
-        totalCombinations = totalCombinations * parallelValues[parallelParam].size()
-    }
-    // ex: OS = {linux-5.11, macos-mojave}
-    // ex: CPU = {arm, mips}
-    // totalCombinations = 2x2 = 4
-    // combinations[0] = {linux-5.11, arm}
-    // combinations[1] = {linux-5.11, mips}
-    // ...
-    // combinationEnvs[0] = {OS=linux-5.11, CPU=arm}
-    // combinationEnvs[1] = {OS=linux-5.11, CPU=mips}
-    // ...
-    for (def i=0; i<totalCombinations; i++) {
-        combinations[i] = []
-        combinationEnvs[i] = []
-    }
-    def divider = totalCombinations
-    for (def j=0; j<parallelParams.size(); j++) {
-        def parallelParam = parallelParams[j]
-        def dimensionSize = parallelValues[parallelParam].size()
-        divider = divider.intdiv(dimensionSize)
-        for (def i=0; i<totalCombinations; i++) {
-            def index = i.intdiv(divider)
-            index = index % dimensionSize
-
-            combinations[i] << parallelValues[parallelParam][index]
-            combinationEnvs[i] << parallelParam + "=" + parallelValues[parallelParam][index]
-        }
-    }
-    def parallelCounts = 0
-    def jobs = [:]
-    def parallelInfo = [:]
-    parallelInfo.branches = []
-    for (def i=0; i<totalCombinations; i++) {
-        def stageName = combinations[i].join("_")
-        def stageNameForExcludesComparison = combinations[i].join(",,")
-        // empty parallel_parameter
-        if (stageName == "") {
-            stageName = "parallel"
-        }
-        // Note: there are two excludes configurations available
-        // 1. llinux-5.11_arm
-        // 2. llinux-5.11,,arm (recommended)
-        if (parallelExcludes.contains(stageName) || parallelExcludes.contains(stageNameForExcludesComparison)) {
-            print "skip stage ${stageName}"
-            continue
-        }
-        def regexMatch = false
-        for (def j=0; j<parallelExcludes.size(); j++) {
-            if (stageNameForExcludesComparison.matches(parallelExcludes[j])) {
-                print "match ${parallelExcludes[j]}, skip stage ${stageName}"
-                regexMatch = true
-                break
-            }
-        }
-        if (regexMatch == true) {
-            continue
-        }
-        combinationEnvs[i] << "BUILD_BRANCH=" + escapedBashVariablename(stageName)
-        combinationEnvs[i] << "BUILD_BRANCH_RAW=" + stageName
-        parallelInfo.branches << escapedBashVariablename(stageName)
-        def customWS = ""
-        def envvar = combinationEnvs[i]
-        print "parallelBuild: parallelCounts ${parallelCounts}"
-
-        jobs[stageName] = {
-            node(nodeName) {
-                customWS = generateCustomWS(JOB_NAME, stageName)
-                print "parallelBuild: set parallel build WS, ${customWS}"
-
-                ws (customWS) {
-                    withEnv(envvar) {
-                        stage(stageName) {
-                            if (cleanWS) {
-                                pascCleanWs()
-                            }
-                            iterateStages(stages, true)
-                        }
-                    }
-                }
-            }
-        }
-        parallelCounts = parallelCounts + 1
-
-    }
-    dir ('.pf-global') {
-        writeJSON file: 'parallelInfo.json', json: parallelInfo
-        stash name: 'pf-global-parallelinfo', includes: 'parallelInfo.json'
-        env.PF_GLOBAL_PARALLELINFO = "1"
-    }
-
-    stage('Parallel') {
-        parallel jobs
-    }
-}
-
-def startCompositionSplit(stageName, idx) {
-    env.PF_BASEWORKSPACE = WORKSPACE
-    utils.translateConfig(stageName)
-    def stageConfig = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
-    def stages = []
-    stages << stageConfig.stages[idx]
-    print "startCompositionSplit: " + idx
-    print "startCompositionSplit: stageConfig, " + stageConfig
-    if (idx == 0) {
-        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stages, stageConfig.node, true)
-    }
-    else {
-        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stages, stageConfig.node, false)
-    }
-}
-
-def startComposition(stageName) {
-    env.PF_BASEWORKSPACE = WORKSPACE
-    utils.translateConfig(stageName)
-    def stageConfig = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
-    print "startComposition: NODE_NAME, " + env.NODE_NAME
-    print "startComposition: stageConfig, " + stageConfig
-    if (stageConfig.run_type == "SEQUENTIAL") {
-        def seqNode = stageConfig["node"]
-        if (stageConfig["node"] == "") {
-            seqNode = env.NODE_NAME
-            //seqNode = "PF_KEEP_AGENT"
-        }
-        print "startComposition: running on ${seqNode}"
-        parallelBuild(stageConfig.parallel_parameters, stageConfig.parallel_excludes, stageConfig.stages, seqNode, true)
-    }
-    else if (stageConfig.run_type == "MULTI") {
-        def seqNode = stageConfig["node"]
-        if (stageConfig["node"] == "") {
-            seqNode = env.NODE_NAME
-        }
-        print "startComposition: running on ${seqNode}"
-        parallelBuildMulti(stageConfig.stages, seqNode)
-    }
-    else {
-        def jobs = [:]
-        for (def concurrentStage in stageConfig.stages) {
-            def stageArray = []
-            stageArray << concurrentStage
-            jobs[concurrentStage] = {
-                iterateStages(stageArray, false)
-            }
-        }
-        if (stageConfig.node == "" || env.NODE_LABELS.contains(stageConfig.node)) {
-            stage('Concurrent') {
-                parallel jobs
-            }
-        }
-        else {
-            node(stageConfig.node) {
-                stage('Concurrent') {
-                    parallel jobs
-                }
-            }
-        }
-    }
-}
-
-def start() {
-    def nodeName = ""
-    try {
-        if (env.PF_GLOBAL_NODES != "") {
-            def nodes = env.PF_GLOBAL_NODES.split(",")
-            nodeName = nodes[0]
-        }
-    }
-    catch (e) {
-        // @Field List nodes = [""] not found
-    }
-
-    def globalStages = env.PF_GLOBAL_STAGES.split(",")
-    //if (nodeName == "" || env.NODE_NAME == nodeName) {
-    if (nodeName == "" || env.NODE_LABELS.contains(nodeName)) {
-        // avoid unnecessary change node
-        pascCleanWs()
-        env.PF_MAIN_AGENT = env.NODE_NAME
-        iterateStages(globalStages, true)
-    }
-    else {
-        node(nodeName) {
-            pascCleanWs()
-            env.PF_MAIN_AGENT = env.NODE_NAME
-            iterateStages(globalStages, true)
-        }
-    }
 }
 
 return this

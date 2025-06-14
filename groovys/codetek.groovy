@@ -20,7 +20,6 @@ def init(stageName) {
         function: "",
         // CODING_STYLE_TAB_4SPACE: for git-commit-*, add coding style check for tab and space
         // SELF_RANKING: ask GPT to rank himself
-        // FULL_GIT_PATCH: Full file with patch (git-commit-coverity-check)
         customization: "",
         
     ]

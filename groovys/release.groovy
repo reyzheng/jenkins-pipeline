@@ -278,15 +278,7 @@ def func(stageName) {
         print "Skip release"
         return
     }
-    if (stageConfig['node'] == "" || env.NODE_NAME == stageConfig['node']) {
-        exec(stageName)
-    }
-    else {
-        node(stageConfig['node']) {
-            utils.unstashPipelineFramework()
-            exec(stageName)
-        }
-    }
+    exec(stageName)
 }
 
 return this

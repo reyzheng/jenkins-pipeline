@@ -8,6 +8,7 @@ def init(stageName) {
         node: ""
     ]
 
+    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     if (config["short_workspace"] == true) {
         env.PF_SHORT_WORKSPACE = "1"

@@ -12,6 +12,7 @@ def init(stageName) {
 
         //scriptableParams: ["project", "stream"]
     ]
+    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     utils.finalizeInit(stageName, config)
 

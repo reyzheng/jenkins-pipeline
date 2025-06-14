@@ -11,6 +11,7 @@ def init(stageName) {
 
         sshcredentials: ""
     ]
+    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     utils.finalizeInit(stageName, config)
 
@@ -31,6 +32,7 @@ def buildEnv(toolbox) {
 
 // actionConfig
 def func(stageName) {
+    def utils = load "${PF_ROOT}/utils.groovy"
     def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def underUnix = isUnix()
     def validScriptTypes = ["inline", "file", "source", "groovy"]

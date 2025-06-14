@@ -1,0 +1,30 @@
+stage('${USERDEFINED_STAGE_NAME}') {
+    steps {
+        script {
+            def utils = load "${env.PF_ROOT}/utils.groovy"
+            def combinations = ${COMBINATIONS}
+            def workspaces = ${COMBINATION_WS_LIST}
+            def combinationEnvs = ${COMBINATION_ENV_LIST}
+            def jobs = [:]
+            for (int i = 0; i < combinations.size(); i++) {
+                def combination = combinations[i]
+                def customWorkspace = workspaces[i]
+                def customEnv = combinationEnvs[i]
+                jobs[combination] = {
+                    node("${COMPOSITION_NODE}") {
+                        ws(customWorkspace) {
+                            withEnv(customEnv) {
+                                stage(combination) {
+                                    pascCleanWs()
+                                    unstashPipelineFramework()
+${COMBINATION_STAGES}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            parallel jobs
+        }
+    }
+}

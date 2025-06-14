@@ -1,0 +1,13 @@
+    agent {
+        docker {
+            image '${DOCKER_IMAGE}'
+            ${DOCKER_ARGS}
+            reuseNode true
+        }
+    }
+                        if (stageConfig.containsKey("node_args") == true && stageConfig["node_args"] != "") {
+                            content += "        args \"" + stageConfig["node_args"] + "\"\n"
+                        }
+                        content += "        reuseNode true\n"
+                        content += "    }\n"
+                        content += "}\n"

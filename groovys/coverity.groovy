@@ -73,6 +73,7 @@ def init(stageName) {
 
         staticParams: ["coverity_snapshot_version", "coverity_snapshot_description", "coverity_checker_enablement"]
     ]
+    def utils = load "utils.groovy"
     def mapConfig = utils.commonInit(stageName, defaultConfigs)
     if (mapConfig["coverity_analyze_defects_options"] == "") {
         mapConfig["coverity_analyze_defects_options"] = [:]

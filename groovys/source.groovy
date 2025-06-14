@@ -26,6 +26,7 @@ def init(stageName) {
         scm_repo_mirror: [""]
     ]
 
+    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     for (def i=0; i<config.scm_counts; i++) {
         def scmDst = config.scm_dsts[i]
@@ -106,6 +107,7 @@ def func(stageName) {
     if (stageConfigs["enabled"] == false) {
         return
     }
+    def utils = load "${PF_ROOT}/utils.groovy"
     utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "TRANSLATE_CONFIG", [])
     stageConfigs = readJSON file: ".pf-all/settings/${stageName}_config.json"
     utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "INIT_WORKDIR", [])
@@ -118,6 +120,7 @@ def func(stageName) {
         scm_checkout(stageConfigs, i)
     }
     utils.pyExec(stageConfigs["actionName"], stageConfigs["stageName"], "SAVE_ENV", [])
+    return
 
     utils.exportEnvVar("PF_SOURCE_WORKDIR", ".pf-${plainStageName}")
     dir (".pf-${plainStageName}") {

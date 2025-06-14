@@ -1,4 +1,30 @@
-import groovy.transform.Field
+def pascCleanWs() {
+    if (isUnix() == true) {
+        def whoami = sh(script: "whoami", returnStdout: true).trim()
+        if (whoami == "root") {
+            error("Do not run jenkins agent as root")
+        }
+    }
+
+    if (env.PF_CLEAN_WS == "false") {
+        print "pascCleanWs: skip"
+        return
+    }
+    def excludes = [[pattern: "${env.PF_ROOT}/**", type: "EXCLUDE"]]
+    if (env.PF_PRESERVE_SOURCE == "true") {
+        if (env.PF_SOURCE_DSTS) {
+            def scmDsts = env.PF_SOURCE_DSTS.split(",")
+            for (def j=0; j<scmDsts.size(); j++) {
+                def exclude = [:]
+                exclude.pattern = "${scmDsts[j]}/**"
+                exclude.type = "EXCLUDE"
+                excludes << exclude
+            }
+        }
+    }
+    print "pascCleanWs: clean WS, excludes: " + excludes
+    cleanWs deleteDirs: true, notFailBuild: true, patterns: excludes
+}
 
 def updateStageConfig(configs) {
     def stageName = configs["stageName"]
@@ -637,7 +663,7 @@ def loadCoreAction(relativePath, actionName) {
 
     dir (relativePath) {
         dir ("groovys") {
-            action = load("${actionName}.groovy")
+            action = load "${actionName}.groovy"
         }
     }
 
@@ -649,7 +675,7 @@ def loadUserAction(relativePath, actionName) {
 
     dir (relativePath) {
         dir ("scripts") {
-            action = load("${actionName}.groovy")
+            action = load "${actionName}.groovy"
         }
     }
 

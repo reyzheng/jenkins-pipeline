@@ -17,6 +17,7 @@ def init(stageName) {
         email_cc: "",
         customization: ""
     ]
+    def utils = load "utils.groovy"
     def config = utils.commonInit(stageName, defaultConfigs)
     utils.finalizeInit(stageName, config)
 

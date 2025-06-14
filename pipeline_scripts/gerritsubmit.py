@@ -111,9 +111,6 @@ def gptCommitMessageReview():
                         # exception
                         pass
                 else:
-                    if 'exception' in resultYaml:
-                        utils.heavyLogging('gptCommitMessageReview: RealGPT exception')
-                        sys.exit(-1)
                     # git-commit-coverity-check
                     summaryList = []
                     for i in range(len(resultYaml['analysis']['introduce_new_defects'])):

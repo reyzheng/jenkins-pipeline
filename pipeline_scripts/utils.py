@@ -1,10 +1,11 @@
-import getopt, sys
+import getopt, sys, re
 import json
 import os, shutil
 import subprocess as sb
 import logging
 import stat
 import time
+from string import Template
 
 POPEN_TIMEOUT=999
 
@@ -495,9 +496,274 @@ def translateConfig(configFile):
     with open(os.path.join(configFile), 'w', encoding='utf-8') as outfile:
         json.dump(stageConfigs, outfile, indent=2)
 
+def extractActionName(stageName):
+    if '@' not in stageName:
+        # build-dummy -> "build"
+        actionName = stageName.rsplit('-', 1)[0]
+    else:
+        # composition@build-dummy -> "build"
+        # composition-dummy@build-dummy -> "build"
+        # composition-dummy@0@build-dummy -> "build"
+        actionName = stageName.split('@')[-1].split('-')[0]
+
+    if actionName == 'buildwithcoverity':
+        actionName = 'coverity'
+
+    return actionName
+
+def escapedBashVariablename(input):
+    input = input.replace("\\-", "dash")
+    input = input.replace("\\.", "dot")
+    input = input.replace("/", "slash")
+    return input
+
+def generateCustomWS(jobName, stageName):
+    if os.name == 'posix':
+        normalizedPath = jobName.replace("\\\\", "/")
+    else:
+        normalizedPath = jobName.replace("/", "\\\\")
+
+    stageName = stageName.replace("/", "_")
+    # do not modify the workspace naming rules, fixed workspace name is necessary for cn2sd5
+    if (os.name != 'posix' and len(stageName) > 32) or 'PF_SHORT_WORKSPACE' in os.environ:
+        import hashlib
+        shasum = hashlib.sha1(stageName.encode('utf-8')).hexdigest()
+        shasum = shasum[:8]
+        heavyLogging("generateCustomWS: map {} to {}".format(stageName, shasum))
+        stageName = shasum
+
+    if '{}@'.format(normalizedPath) in os.getenv('WORKSPACE'):
+        customWS = os.getenv('WORKSPACE')[0:os.getenv('WORKSPACE').index('{}@'.format(normalizedPath)) + len(normalizedPath)] + '@{}'.format(stageName)
+    elif '_job_' in os.getenv('WORKSPACE'):
+        # normalizedPath may not be presented on windows
+        customWS = os.getenv('WORKSPACE')[0:os.getenv('WORKSPACE').rfind('_job_')] + '@{}'.format(stageName)
+    else:
+        customWS = os.getenv('WORKSPACE') + '@{}'.format(stageName)
+    customWS = customWS.replace("@", "at")
+
+    return customWS
+
+def formatJenkinsfileCompositionMain(stageName, userdefinedStageName):
+    settingRoot = os.path.join(os.getenv('PF_PATH'), 'settings')
+    translateConfig(os.path.join(settingRoot, '{}_config.json'.format(stageName)))
+    with open(os.path.join(settingRoot, '{}_config.json'.format(stageName)), 'r', encoding='utf-8') as f:
+        stageConfig = json.load(f)
+    if stageConfig['node'] == '':
+        compositionNode = os.getenv('NODE_NAME')
+    else:
+        compositionNode = stageConfig['node']
+
+    parallelParams = []
+    parallelValues = dict()
+    for key in stageConfig['parallel_parameters']:
+        parallelParams.append(key)
+        parallelValues[key] = stageConfig['parallel_parameters'][key]
+
+    # ex: OS = {linux-5.11, macos-mojave}
+    # ex: CPU = {arm, mips}
+    # totalCombinations = 2x2 = 4
+    # combinations[0] = {linux-5.11, arm}
+    # combinations[1] = {linux-5.11, mips}
+    # ...
+    # combinationEnvs[0] = {OS=linux-5.11, CPU=arm}
+    # combinationEnvs[1] = {OS=linux-5.11, CPU=mips}
+    # ...
+    totalCombinations = 1
+    combinationWSList = []
+    for parallelParam in parallelParams:
+        totalCombinations = totalCombinations * len(parallelValues[parallelParam])
+    combinations = [[] for i in range(totalCombinations)]
+    combinationEnvs = [[] for i in range(totalCombinations)]
+    divider = totalCombinations
+    for j in range(len(parallelParams)):
+        parallelParam = parallelParams[j]
+        dimensionSize = len(parallelValues[parallelParam])
+        divider = divider // dimensionSize
+        for i in range(totalCombinations):
+            index = i // divider
+            index = index % dimensionSize
+            combinations[i].append(parallelValues[parallelParam][index])
+            combinationEnvs[i].append('{}={}'.format(parallelParam, parallelValues[parallelParam][index]))
+
+    parallelCounts = 0
+    parallelInfo = dict()
+    parallelInfo['branches'] = []
+    for i in range(totalCombinations):
+        stageName = '_'.join(combinations[i])
+        stageNameForExcludesComparison = ',,'.join(combinations[i])
+        # empty parallel_parameter
+        if stageName == "":
+            stageName = 'parallel'
+        # Note: there are two excludes configurations available
+        # 1. llinux-5.11_arm
+        # 2. llinux-5.11,,arm (recommended)
+        if 'parallel_excludes' in stageConfig and \
+            (stageName in stageConfig['parallel_excludes'] or stageNameForExcludesComparison in stageConfig['parallel_excludes']):
+            heavyLogging('formatJenkinsfileStages: skip {}'.format(stageName))
+            continue
+
+        regexMatch = False
+        if 'parallel_excludes' in stageConfig:
+            for j in range(len(stageConfig['parallel_excludes'])):
+                patternOfExcludes = re.compile(r'{}'.format(stageConfig['parallel_excludes'][j]))
+                if patternOfExcludes.search(stageNameForExcludesComparison):
+                    heavyLogging('formatJenkinsfileStages: skip {} (regex match {})'.format(stageName, stageConfig['parallel_excludes'][j]))
+                    regexMatch = True
+                    break
+        if regexMatch == True:
+            continue
+
+        combinationEnvs[i].append('BUILD_BRANCH={}'.format(escapedBashVariablename(stageName)))
+        combinationEnvs[i].append('BUILD_BRANCH_RAW={}'.format(stageName))
+        parallelInfo['branches'].append(escapedBashVariablename(stageName))
+        combinationWSList.append(generateCustomWS(os.getenv('JOB_NAME'), stageName))
+        parallelCounts = parallelCounts + 1
+
+    heavyLogging('formatJenkinsfileStages: parallelCounts {}'.format(parallelCounts))
+
+    os.makedirs('.pf-global', exist_ok=True)
+    with open(os.path.join('.pf-global', 'parallelInfo.json'), 'w', encoding='utf-8') as f:
+        json.dump(parallelInfo, f, indent=2)
+
+    with open(os.path.join('templates', 'Jenkinsfile.compositionstage'), 'r', encoding='utf-8') as fpTemplate:
+        tJenkinsfileCompositionStage = fpTemplate.read()
+
+    return Template(tJenkinsfileCompositionStage).safe_substitute(USERDEFINED_STAGE_NAME = userdefinedStageName,
+                                                                    COMBINATIONS = str(parallelInfo['branches']),
+                                                                    COMPOSITION_NODE = compositionNode,
+                                                                    COMBINATION_WS_LIST = str(combinationWSList),
+                                                                    COMBINATION_ENV_LIST = str(combinationEnvs),
+                                                                    COMBINATION_STAGES = formatJenkinsfileStages(stageConfig['stages'], markSteps=True))
+
+def formatJenkinsfileStages(stages, markSteps=False):
+    settingRoot = os.path.join(os.getenv('PF_PATH'), 'settings')
+    scriptRoot = os.path.join(os.getenv('PF_PATH'), 'scripts')
+
+    stageContents = []
+    if len(stages) > 0:
+        for stageIdx in range(len(stages)):
+            stageName = stages[stageIdx]
+            actionName = extractActionName(stageName)
+
+            userdefinedStageName = stageName
+            with open(os.path.join(settingRoot, '{}_config.json'.format(stageName)), 'r', encoding='utf-8') as f:
+                stageConfig = json.load(f)
+            if 'display_name' in stageConfig:
+                userdefinedStageName = stageConfig['display_name']
+
+            if actionName == 'composition':
+                stageContents.append(formatJenkinsfileCompositionMain(stageName, userdefinedStageName))
+            else:
+                stageAgent = ''
+                stagePF = 'pf'
+                # stagePFInit = 'if (!pf) {pf = pfInit(true) }'
+                stagePFInit = ''
+                if 'node' in stageConfig and stageConfig['node'] != '':
+                    # TODO: is pfTmp necessary?
+                    stagePF = 'pfTmp'
+                    stagePFInit = 'def pfTmp = pfInit(false)'
+                    if stageConfig['node'].startswith('docker:'):
+                        dockerImage = stageConfig['node'].split(':')
+                        dockerImage = dockerImage[1]
+                        dockerArgs = ''
+                        if 'node_args' in stageConfig and stageConfig['node_args'] != '':
+                            dockerArgs = 'args \'{}\''.format(stageConfig['node_args'])
+                        with open(os.path.join('templates', 'Jenkinsfile.stage.dockeragent'), 'r', encoding='utf-8') as fpTemplate:
+                            tJenkinsfileStageAgent = fpTemplate.read()
+                        stageAgent = Template(tJenkinsfileStageAgent).safe_substitute(DOCKER_IMAGE = dockerImage,
+                                                                                        DOCKER_ARGS = dockerArgs)
+                    else:
+                        with open(os.path.join('templates', 'Jenkinsfile.stage.agent'), 'r', encoding='utf-8') as fpTemplate:
+                            tJenkinsfileStageAgent = fpTemplate.read()
+                        stageAgent = Template(tJenkinsfileStageAgent).safe_substitute(STAGE_NODE = stageConfig['node'])
+                
+                #coreActions = os.getenv('PF_CORE_ACTIONS').split(',')
+                #if actionName in coreActions:
+                #    pfExec = "def action = utils.loadCoreAction(env.PF_ROOT, '{}')\n".format(actionName)
+                #    pfExec += "action.func('{}')".format(stageName)
+                #else:
+                #    pfExec = "{}.execStage('{}', '{}')".format(stagePF, actionName, stageName)
+
+                stageOptions = ''
+                if os.path.isfile(os.path.join(scriptRoot, '{}.options'.format(stageName))):
+                    with open(os.path.join(scriptRoot, '{}.options'.format(stageName)), 'r', encoding='utf-8') as f:
+                        stageOptions = f.read()
+                stageCredentialsStart = ''
+                stageCredentialsEnd = ''
+                if os.path.isfile(os.path.join(scriptRoot, '{}.creds'.format(stageName))):
+                    with open(os.path.join(scriptRoot, '{}.creds'.format(stageName)), 'r', encoding='utf-8') as f:
+                        stageCredentialsStart = f.read()
+                    stageCredentialsEnd = '}'
+
+                with open(os.path.join('templates', 'Jenkinsfile.stage'), 'r', encoding='utf-8') as fpTemplate:
+                    tJenkinsfileStage = fpTemplate.read()
+                if markSteps == True:
+                    stageSteps = '//'
+                else:
+                    stageSteps = ''
+                if 'stage_lock' in stageConfig and stageConfig['stage_lock'] == True:
+                    markLock = ''
+                else:
+                    markLock = '//'
+                stageContents.append(Template(tJenkinsfileStage).safe_substitute(MARK_LOCK = markLock,
+                                                                                    USERDEFINED_STAGE_NAME = userdefinedStageName,
+                                                                                    STAGE_AGENT = stageAgent,
+                                                                                    STAGE_OPTIONS = stageOptions,
+                                                                                    STAGE_STEPS = stageSteps,
+                                                                                    STAGE_CREDENTIALS_START = stageCredentialsStart,
+                                                                                    STAGE_CREDENTIALS_END = stageCredentialsEnd,
+                                                                                    STAGE_PF_INIT = stagePFInit,
+                                                                                    ACTION_NAME = actionName,
+                                                                                    STAGE_NAME = stageName))
+
+    return ''.join(stageContents)
+
+def formatJenkinsfile(configFile, node):
+    scriptRoot = os.path.join(os.getenv('PF_PATH'), 'scripts')
+    templateRoot = os.path.join('templates')
+    with open(configFile, 'r', encoding='utf-8') as file:
+        globalConfig = json.load(file)
+
+    nodeSection = ''
+    nodeLabel = ''
+    if node == 'true' and len(globalConfig['nodes']) > 0:
+        nodeLabel = globalConfig['nodes'][0]
+        nodeSection = 'def nodeLabel="{}"'.format(nodeLabel)
+    if node == 'true':
+        if nodeLabel == '' or nodeLabel in os.getenv('NODE_LABELS'):
+            agentDesc = 'none'
+        else:
+            agentDesc = '{ label nodeLabel }'
+    else:
+        agentDesc = 'none'
+
+    if os.path.isfile(os.path.join(scriptRoot, 'Jenkinsfile.options')):
+        with open(os.path.join(scriptRoot, 'Jenkinsfile.options'), 'r', encoding='utf-8') as f:
+            jenkinsfileOptions = f.read()
+    else:
+        with open(os.path.join(templateRoot, 'Jenkinsfile.options'), 'r', encoding='utf-8') as f:
+            jenkinsfileOptions = f.read()
+    if os.path.isfile(os.path.join(scriptRoot, 'Jenkinsfile.triggers')):
+        with open(os.path.join(scriptRoot, 'Jenkinsfile.triggers'), 'r', encoding='utf-8') as f:
+            jenkinsfileTriggers = f.read()
+    else:
+        jenkinsfileTriggers = ''
+
+    with open(os.path.join('templates', 'Jenkinsfile'), 'r', encoding='utf-8') as fpTemplate:
+        tJenkinsfile = fpTemplate.read()
+    fp = open('Jenkinsfile.restartable', 'w', encoding='utf-8')
+    fullJenkinsFile = Template(tJenkinsfile).safe_substitute(NODE_LABEL = nodeSection,
+                                                    AGENT_DESC = agentDesc,
+                                                    JENKINSFILE_OPTIONS = jenkinsfileOptions,
+                                                    JENKINSFILE_TRIGGERS = jenkinsfileTriggers,
+                                                    JENKINSFILE_STAGES = formatJenkinsfileStages(globalConfig['stages'], markSteps=False))
+    heavyLogging('formatJenkinsfile: {}'.format(fullJenkinsFile))
+    fp.write(fullJenkinsFile)
+    fp.close()
+
 def main(argv):
     try:
-        opts, args = getopt.getopt(argv[1:], 'c:f:v', ["command=", "config=", "version"])
+        opts, args = getopt.getopt(argv[1:], 'n:c:f:v', ["node=", "command=", "config=", "version"])
     except getopt.GetoptError:
         sys.exit()
 
@@ -505,6 +771,9 @@ def main(argv):
         if name in ('-v', '--version'):
             print("0.1")
             sys.exit(0)
+        elif name in ('-n', '--node'):
+            # override if --user
+            node = value
         elif name in ('-c', '--command'):
             # override if --user
             command = value
@@ -512,9 +781,11 @@ def main(argv):
             # override if --user
             configFile = value
 
-    if command == "TRANSLATE_CONFIG":
+    if command == 'TRANSLATE_CONFIG':
         translateConfig(configFile)
         sys.exit(0)
+    elif command == 'FORMAT_JENKINSFILE':
+        formatJenkinsfile(configFile, node)
 
 if __name__ == "__main__":
     main(sys.argv)

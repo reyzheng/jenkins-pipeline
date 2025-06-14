@@ -11,6 +11,7 @@ def init() {
         mail_recipient: ""
     ]
 
+    def utils = load "utils.groovy"
     def config
     def hasPostGroovy = fileExists env.PF_PATH + "settings/post_config.groovy"
     def hasPostJson = fileExists env.PF_PATH + "settings/post_config.json"
@@ -135,7 +136,7 @@ def execute(pipelineAsCode, postStatus) {
             }
             else {
                 try {
-                    action.func(pipelineAsCode, pipelineAsCode.configs[actionName])
+                    action.func(stageName)
                 }
                 catch (e) {
                     action.func()

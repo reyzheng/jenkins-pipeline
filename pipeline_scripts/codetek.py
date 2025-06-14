@@ -316,15 +316,8 @@ def gitPatchCoverityCheck(configs):
         for allPatch in allPatches:
             with open(allPatch['patch'], 'r') as fpPatch:
                 patchContent = fpPatch.read()
-            if 'FULL_GIT_PATCH' in configs['customization']:
-                functionContent = ''
-                if os.path.isfile(os.path.join(sourceDir, allPatch['file'])):
-                    # For ADD operation, file is not existed
-                    with open(os.path.join(sourceDir, allPatch['file']), 'r', encoding='utf-8') as f:
-                        functionContent = f.read()
-            else:
-                functions = extractFunctionParts(allPatch, sourceDir, True)
-                functionContent = ''.join(functions['contents'])
+            functions = extractFunctionParts(allPatch, sourceDir, True)
+            functionContent = ''.join(functions['contents'])
             # general patch + function -> accept
             # general patch + non-function -> reject
             # added(whole) patch -> accept
@@ -757,9 +750,8 @@ def codeprompt(configs):
                     with open(outputFile, 'w', encoding='utf-8') as yaml_file:
                         yaml.dump(retYaml, yaml_file, default_flow_style=False)
                     writeOutputFile = False
-            except Exception as e:
-                print(e)
-                sys.exit(-1)
+            except:
+                pass
         if writeOutputFile == True:
             f = open(outputFile, 'w', encoding='utf-8')
             f.write(ret)

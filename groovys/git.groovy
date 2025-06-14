@@ -1,5 +1,6 @@
 
 def func(configs) {
+    def utils = load "${PF_ROOT}/utils.groovy"
     def underUnix = isUnix()
     // manual
     def localBranch = configs["branch"]
@@ -99,7 +100,7 @@ def func(configs) {
 
         if (configs["dst"] == "") {
             // notice: git plugin will clean current folder, recover .pf-all
-            utils.unstashPipelineFramework()
+            unstashPipelineFramework()
         }
 
         try {

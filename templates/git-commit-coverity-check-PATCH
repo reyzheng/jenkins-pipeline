@@ -1,12 +1,12 @@
 File: $file_path
-File Context (including line number, if applicable):
-- This section contains the file context along with its **starting line number**.
+Function Context (including line number, if applicable):
+- This section contains the **function name** along with its **starting line number** in the original file.
 - If this section is **empty**, it means the patch represents an **"Added" operation** (i.e., a new file is introduced).
 ```
 $function
 ```
 Patch Content:
-- Apply the following patch to the provided File context (or treat it as a new file if "File Context" is empty).
+- Apply the following patch to the provided function context (or treat it as a new function if "Function Context" is empty).
 ```
 $patch
 ```
