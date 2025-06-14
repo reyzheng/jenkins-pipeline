@@ -1,4 +1,4 @@
-@Library('pipeline-framework') _
+@Library('pipeline-framework@profiling') _
 
 ${NODE_LABEL}
 
