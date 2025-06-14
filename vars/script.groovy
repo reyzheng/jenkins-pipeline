@@ -33,7 +33,7 @@ def buildEnv(toolbox) {
 
 // actionConfig
 def call(stageName) {
-    def utils = load "${PF_ROOT}/utils.groovy"
+    def utils = load "${env.PF_ROOT}/utils.groovy"
     def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def underUnix = isUnix()
     def validScriptTypes = ["inline", "file", "source", "groovy"]
