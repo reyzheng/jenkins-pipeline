@@ -1,5 +1,3 @@
-@Library('pipeline-framework@profiling') _
-
 ${NODE_LABEL}
 
 def pfInit(setMainAgent) {
