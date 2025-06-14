@@ -8,7 +8,7 @@ ${MARK_LOCK}  lock('${USERDEFINED_STAGE_NAME}') {
                             ${STAGE_PF_INIT}
                             //def action = load("${env.PF_ROOT}/groovys/${ACTION_NAME}.groovy")
                             //action.func('${STAGE_NAME}')
-                            ${ACTION_NAME}('${STAGE_NAME}')
+                            ${ACTION_NAME}('${STAGE_NAME}', env)
                         }
     ${STAGE_CREDENTIALS_END}
     ${STAGE_STEPS} }
