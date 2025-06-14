@@ -171,8 +171,13 @@ def unstashPipelineFramework() {
                 }
             }
             print "unstash stash-pf-framework finished"
-            unstash name: "stash-pf-config"
-            print "unstash stash-pf-config finished"
+            //unstash name: "stash-pf-config"
+            copyArtifacts(
+                projectName: "${JOB_NAME}",
+                filter: 'Jenkinsfile*,settings/**,scripts/**',
+                selector: specific("${BUILD_NUMBER}")
+            )
+            print "unstash stash-pf-config finished (utils)"
         }
     }
 }

@@ -385,7 +385,8 @@ def init() {
     // re-write logParserRule after initialization
     stash name: 'stash-pf-framework', includes: "utils.groovy,groovys/**,pipeline_scripts/**,templates/**,rtk_coverity/**,vendor/**"
     dir (env.PF_PATH) {
-        stash name: 'stash-pf-config', includes: "Jenkinsfile*,settings/**,scripts/**"
+        archiveArtifacts artifacts: "Jenkinsfile*,settings/**,scripts/**"
+        //stash name: 'stash-pfxxx-config', includes: "Jenkinsfile*,settings/**,scripts/**"
     }
     // note: for Jenkinsfile.restartable
     // iterateStages() would not be called in Jenkinsfile.restartable
