@@ -1,6 +1,7 @@
 ${NODE_LABEL}
 
 def pfInit(setMainAgent) {
+    print "debug pfInit 4"
     def _pf
     // restrict pf.init() under ".pf-framework", to mitigate PF_PATH finding cost
     def frameworkExists = fileExists ".pf-framework/rtk_stages.groovy"
@@ -139,7 +140,9 @@ pipeline {
         stage("PF-init") {
             steps {
                 script {
+                    print "PF-init 143"
                     pfInit(true)
+                    print "PF-init 145"
                 }
             }
         }
