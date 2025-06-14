@@ -32,7 +32,7 @@ def buildEnv(toolbox) {
 }
 
 // actionConfig
-def call(stageName, env) {
+def call(stageName) {
     def utils = load "${env.PF_ROOT}/utils.groovy"
     def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
     def underUnix = isUnix()
