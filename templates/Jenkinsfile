@@ -1,3 +1,5 @@
+@Library('pipeline-framework') _
+
 ${NODE_LABEL}
 
 def pfInit(setMainAgent) {
