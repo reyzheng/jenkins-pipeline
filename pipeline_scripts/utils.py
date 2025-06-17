@@ -569,7 +569,7 @@ def formatJenkinsfileCompositionMulti(stageName, userdefinedStageName):
         subStages = stageConfig['stages'][i]
         with open(os.path.join('templates', 'Jenkinsfile.compositionjob'), 'r', encoding='utf-8') as fpTemplate:
             tJenkinsfileCompositionJob = fpTemplate.read()
-        combinationJobs.append(Template(tJenkinsfileCompositionJob).safe_substitute(JOB_NAME = parallelInfo['branches'][i],
+        combinationJobs.append(Template(tJenkinsfileCompositionJob).safe_substitute(JOB_NAME = '"{}"'.format(parallelInfo['branches'][i]),
                                                                                     COMPOSITION_NODE = nodeName,
                                                                                     COMPOSITION_WS = '"{}"'.format(generateCustomWS(os.getenv('JOB_NAME'), parallelInfo['branches'][i])),
                                                                                     COMPOSITION_ENV = str(combinationEnv),
