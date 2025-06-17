@@ -557,7 +557,7 @@ def formatJenkinsfileCompositionConcurrent(stageName, userdefinedStageName):
     for i in range(len(stageConfig['stages'])):
         subStages = []
         subStages.append(stageConfig['stages'][i])
-        with open(os.path.join('templates', 'Jenkinsfile.compositionjob'), 'r', encoding='utf-8') as fpTemplate:
+        with open(os.path.join('templates', 'Jenkinsfile.compositionjob-prune'), 'r', encoding='utf-8') as fpTemplate:
             tJenkinsfileCompositionJob = fpTemplate.read()
         combinationJobs.append(Template(tJenkinsfileCompositionJob).safe_substitute(JOB_NAME = '"CONCURRENT_{}"'.format(i),
                                                                                     COMPOSITION_NODE = compositionNode,
