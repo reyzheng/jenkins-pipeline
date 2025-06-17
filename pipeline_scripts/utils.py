@@ -557,7 +557,7 @@ def formatJenkinsfileCompositionMulti(stageName, userdefinedStageName):
     parallelInfo = dict()
     parallelInfo['branches'] = []
     combinationJobs = []
-    for i in range(stageConfig['stages']):
+    for i in range(len(stageConfig['stages'])):
         if i >= len(nodes):
             nodeName = nodes[-1]
         else:
