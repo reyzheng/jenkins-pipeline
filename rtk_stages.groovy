@@ -404,9 +404,13 @@ def _format(withNodeLabel) {
     else {
         bat formatScript
     }
-    dir ('.pf-global') {
-        stash name: 'pf-global-parallelinfo', includes: 'parallelInfo.json'
-        env.PF_GLOBAL_PARALLELINFO = "1"
+
+    def hasParallelInfo = fileExists ".pf-global/parallelInfo.json"
+    if (hasParallelInfo == true) {
+        dir ('.pf-global') {
+            stash name: 'pf-global-parallelinfo', includes: 'parallelInfo.json'
+            env.PF_GLOBAL_PARALLELINFO = "1"
+        }
     }
 }
 
