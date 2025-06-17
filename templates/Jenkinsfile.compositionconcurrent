@@ -1,0 +1,9 @@
+stage('${USERDEFINED_STAGE_NAME}') {
+    steps {
+        script {
+            def jobs = [:]
+${COMBINATION_JOBS}
+            parallel jobs
+        }
+    }
+}
