@@ -543,12 +543,55 @@ def generateCustomWS(jobName, stageName):
 
     return customWS
 
-def formatJenkinsfileCompositionMain(stageName, userdefinedStageName):
+def formatJenkinsfileCompositionMulti(stageName, userdefinedStageName):
     settingRoot = os.path.join(os.getenv('PF_PATH'), 'settings')
     translateConfig(os.path.join(settingRoot, '{}_config.json'.format(stageName)))
     with open(os.path.join(settingRoot, '{}_config.json'.format(stageName)), 'r', encoding='utf-8') as f:
         stageConfig = json.load(f)
     if stageConfig['node'] == '':
+        # TODO: replace with node label
+        compositionNode = os.getenv('NODE_NAME')
+    else:
+        compositionNode = stageConfig['node']
+    nodes = compositionNode.split(',')
+    parallelInfo = dict()
+    parallelInfo['branches'] = []
+    combinationJobs = []
+    for i in range(stageConfig['stages']):
+        if i >= len(nodes):
+            nodeName = nodes[-1]
+        else:
+            nodeName = nodes[i]
+        parallelInfo['branches'].append('PF_MULTI{}'.format(i))
+        combinationEnv = []
+        combinationEnv.append('BUILD_BRANCH={}'.format(escapedBashVariablename(stageName)))
+        combinationEnv.append('BUILD_BRANCH_RAW={}'.format(stageName))
+        subStages = stageConfig['stages'][i]
+        with open(os.path.join('templates', 'Jenkinsfile.compositionjob'), 'r', encoding='utf-8') as fpTemplate:
+            tJenkinsfileCompositionJob = fpTemplate.read()
+        combinationJobs.append(Template(tJenkinsfileCompositionJob).safe_substitute(JOB_NAME = parallelInfo['branches'][i],
+                                                                                    COMPOSITION_NODE = nodeName,
+                                                                                    COMPOSITION_WS = '"{}"'.format(generateCustomWS(os.getenv('JOB_NAME'), parallelInfo['branches'][i])),
+                                                                                    COMPOSITION_ENV = str(combinationEnv),
+                                                                                    COMPOSITION_STAGE = '"{}"'.format(parallelInfo['branches'][i]),
+                                                                                    COMBINATION_STAGES = formatJenkinsfileStages(subStages, markSteps=True)))
+
+    os.makedirs('.pf-global', exist_ok=True)
+    with open(os.path.join('.pf-global', 'parallelInfo.json'), 'w', encoding='utf-8') as f:
+        json.dump(parallelInfo, f, indent=2)
+
+    with open(os.path.join('templates', 'Jenkinsfile.compositionmulti'), 'r', encoding='utf-8') as fpTemplate:
+        tJenkinsfileCompositionStage = fpTemplate.read()
+    return Template(tJenkinsfileCompositionStage).safe_substitute(USERDEFINED_STAGE_NAME = userdefinedStageName,
+                                                                  COMBINATION_JOBS = combinationJobs)
+
+def formatJenkinsfileCompositionSequential(stageName, userdefinedStageName):
+    settingRoot = os.path.join(os.getenv('PF_PATH'), 'settings')
+    translateConfig(os.path.join(settingRoot, '{}_config.json'.format(stageName)))
+    with open(os.path.join(settingRoot, '{}_config.json'.format(stageName)), 'r', encoding='utf-8') as f:
+        stageConfig = json.load(f)
+    if stageConfig['node'] == '':
+        # TODO: replace with node label
         compositionNode = os.getenv('NODE_NAME')
     else:
         compositionNode = stageConfig['node']
@@ -625,15 +668,21 @@ def formatJenkinsfileCompositionMain(stageName, userdefinedStageName):
     with open(os.path.join('.pf-global', 'parallelInfo.json'), 'w', encoding='utf-8') as f:
         json.dump(parallelInfo, f, indent=2)
 
-    with open(os.path.join('templates', 'Jenkinsfile.compositionstage'), 'r', encoding='utf-8') as fpTemplate:
+    with open(os.path.join('templates', 'Jenkinsfile.compositionjob'), 'r', encoding='utf-8') as fpTemplate:
+        tJenkinsfileCompositionJob = fpTemplate.read()
+    with open(os.path.join('templates', 'Jenkinsfile.compositionsequential'), 'r', encoding='utf-8') as fpTemplate:
         tJenkinsfileCompositionStage = fpTemplate.read()
-
+    combinationJobs = Template(tJenkinsfileCompositionJob).safe_substitute(JOB_NAME = 'combination',
+                                                                            COMPOSITION_NODE = compositionNode,
+                                                                            COMPOSITION_WS = 'customWorkspace',
+                                                                            COMPOSITION_ENV = 'customEnv',
+                                                                            COMPOSITION_STAGE = 'combination',
+                                                                            COMBINATION_STAGES = formatJenkinsfileStages(stageConfig['stages'], markSteps=True))
     return Template(tJenkinsfileCompositionStage).safe_substitute(USERDEFINED_STAGE_NAME = userdefinedStageName,
                                                                     COMBINATIONS = str(parallelInfo['branches']),
-                                                                    COMPOSITION_NODE = compositionNode,
                                                                     COMBINATION_WS_LIST = str(combinationWSList),
                                                                     COMBINATION_ENV_LIST = str(combinationEnvs),
-                                                                    COMBINATION_STAGES = formatJenkinsfileStages(stageConfig['stages'], markSteps=True))
+                                                                    COMBINATION_JOBS = combinationJobs)
 
 def formatJenkinsfileStages(stages, markSteps=False):
     settingRoot = os.path.join(os.getenv('PF_PATH'), 'settings')
@@ -652,7 +701,15 @@ def formatJenkinsfileStages(stages, markSteps=False):
                 userdefinedStageName = stageConfig['display_name']
 
             if actionName == 'composition':
-                stageContents.append(formatJenkinsfileCompositionMain(stageName, userdefinedStageName))
+                if stageConfig['run_type'] == 'MULTI':
+                    stageContents.append(formatJenkinsfileCompositionMulti(stageName, userdefinedStageName))
+                elif stageConfig['run_type'] == 'SEQUENTIAL':
+                    stageContents.append(formatJenkinsfileCompositionSequential(stageName, userdefinedStageName))
+                #elif stageConfig['run_type'] == 'SEQUENTIAL_SPLIT':
+                #    stageContents.append(formatJenkinsfileCompositionSequentialSplit(stageName, userdefinedStageName))
+                #else:
+                    # stageConfig['run_type'] == 'CONCURRENT'
+                #    stageContents.append(formatJenkinsfileCompositionConcurrent(stageName, userdefinedStageName))
             else:
                 stageAgent = ''
                 stagePF = 'pf'

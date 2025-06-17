@@ -1,45 +1,39 @@
 import os
+import utils
 
-    def configs = readJSON file: "${env.PF_ROOT}/settings/${stageName}_config.json"
-    def underUnix = isUnix()
-    def validScriptTypes = ["inline", "file", "source", "groovy"]
-    def toolbox = buildEnv(configs["toolbox"])
-    print "toolbox: ${toolbox}"
+def script(configs):
+    validScriptTypes = ["inline", "file", "source", "groovy"]
+    if configs['toolbox'] != '':
+        execPrefix = 'singularity exec {}'.format(configs['toolbox'])
+        utils.heavyLogging('script: execPrefix {}'.format(execPrefix))
 
-    if (configs.enable == false) {
-        print "Stage ${stageName} cancelld manually"
+    if configs['enable'] == False:
+        utils.heavyLogging("Stage {} cancelld manually".format(configs['stageName']))
         return
-    }
 
-    def displayName = configs["display_name"]
-    if (displayName == "") {
-        displayName = stageName
-    }
+    displayName = configs["display_name"]
+    if displayName == "":
+        displayName = configs['stageName']
 
-    def reportStageName = displayName
-    if (env.BUILD_BRANCH) {
-        reportStageName = reportStageName + " ${env.BUILD_BRANCH}"
-    }
+    reportStageName = displayName
+    if 'BUILD_BRANCH' in os.environ:
+        reportStageName = "{} {}".format(reportStageName, os.getenv('BUILD_BRANCH'))
 
-    try {
-        for (def i=0; i<configs.types.size(); i++) {
-            if (validScriptTypes.contains(configs.types[i]) == false) {
+    try:
+        for i in range(len(configs['types'])):
+            if configs['types'][i] not in validScriptTypes:
                 return
-            }
 
-            if (configs.expressions[i] && configs.expressions[i] != "") {
-                def expr = evaluate(configs.expressions[i])
-                if (expr == false) {
-                    print "skip ${i}th script"
-                    continue
-                }
-            }
+            #if (configs.expressions[i] && configs.expressions[i] != "") {
+            #    def expr = evaluate(configs.expressions[i])
+            #    if (expr == false) {
+            #        print "skip ${i}th script"
+            #        continue
+            #    }
+            #}
 
-            dir (".pf-${configs.plainStageName}") {
-                deleteDir()
-                writeFile file: "DUMMY", text: ""
-            }
-            if (configs.types[i] == "inline") {
+            utils.makeEmptyDirectory(".pf-{}".format(configs['plainStageName']))
+            if configs['types'][i] == "inline":
                 if (configs.sshcredentials == "") {
                     utils.inlineScript(configs.contents[i], underUnix, toolbox)
                 }
@@ -48,8 +42,7 @@ import os
                         utils.inlineScript(configs.contents[i], underUnix, toolbox)
                     }
                 }
-            }
-            else {
+            else:
                 if (configs.sshcredentials == "") {
                     utils.fileScript(underUnix, configs.types[i], configs.contents[i], toolbox, configs["sshcredentials"], ".pf-${configs.plainStageName}")
                 }
@@ -119,6 +112,7 @@ def main(argv):
         sys.exit(0)
     configs['WORK_DIR'] = workDir
     utils.cleanEnvAndArchives(workDir)
+    script(configs)
     if command == 'CHECK_ENV':
         utils.checkSingularity(workDir)
     else:

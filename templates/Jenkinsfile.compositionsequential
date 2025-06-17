@@ -10,19 +10,7 @@ stage('${USERDEFINED_STAGE_NAME}') {
                 def combination = combinations[i]
                 def customWorkspace = workspaces[i]
                 def customEnv = combinationEnvs[i]
-                jobs[combination] = {
-                    node("${COMPOSITION_NODE}") {
-                        ws(customWorkspace) {
-                            withEnv(customEnv) {
-                                stage(combination) {
-                                    pascCleanWs()
-                                    unstashPipelineFramework()
-${COMBINATION_STAGES}
-                                }
-                            }
-                        }
-                    }
-                }
+${COMBINATION_JOBS}
             }
             parallel jobs
         }

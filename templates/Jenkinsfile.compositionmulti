@@ -1,0 +1,7 @@
+stage('${USERDEFINED_STAGE_NAME}') {
+    steps {
+${COMBINATION_JOBS}
+            parallel jobs
+        }
+    }
+}
