@@ -137,9 +137,7 @@ ${JENKINSFILE_TRIGGERS}
         stage("PF-init") {
             steps {
                 script {
-                    print "PF-init 143"
                     pfInit(true)
-                    print "PF-init 145"
                 }
             }
         }

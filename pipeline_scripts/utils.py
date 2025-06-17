@@ -583,7 +583,7 @@ def formatJenkinsfileCompositionMulti(stageName, userdefinedStageName):
     with open(os.path.join('templates', 'Jenkinsfile.compositionmulti'), 'r', encoding='utf-8') as fpTemplate:
         tJenkinsfileCompositionStage = fpTemplate.read()
     return Template(tJenkinsfileCompositionStage).safe_substitute(USERDEFINED_STAGE_NAME = userdefinedStageName,
-                                                                  COMBINATION_JOBS = combinationJobs)
+                                                                  COMBINATION_JOBS = ''.join(combinationJobs))
 
 def formatJenkinsfileCompositionSequential(stageName, userdefinedStageName):
     settingRoot = os.path.join(os.getenv('PF_PATH'), 'settings')
