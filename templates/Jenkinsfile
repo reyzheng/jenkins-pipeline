@@ -1,7 +1,6 @@
 ${NODE_LABEL}
 
 def pfInit(setMainAgent) {
-    print "debug pfInit 4"
     def _pf
     // restrict pf.init() under ".pf-framework", to mitigate PF_PATH finding cost
     def frameworkExists = fileExists ".pf-framework/rtk_stages.groovy"
@@ -72,7 +71,7 @@ def unstashPipelineFramework() {
             // call git clone to avoid this issue
             // git clone jenkins-pipeline should be called prior to unstash name: "stash-pf-config", to avoid git "not an empty directory" error
             if (isUnix() == true) {
-                //unstash name: "stash-pf-framework"
+                unstash name: "stash-pf-framework"
             }
             else {
                 print "git clone (workaround)"
@@ -88,12 +87,7 @@ def unstashPipelineFramework() {
                 }
             }
             print "unstash stash-pf-framework finished"
-            //unstash name: "stash-pf-config"
-            copyArtifacts(
-                projectName: "${JOB_NAME}",
-                filter: 'Jenkinsfile*,settings/**,scripts/**,utils.groovy,groovys/**,pipeline_scripts/**,templates/**,rtk_coverity/**,vendor/**',
-                selector: specific("${BUILD_NUMBER}")
-            )
+            unstash name: "stash-pf-config"
             print "unstash stash-pf-config finished"
         }
     }

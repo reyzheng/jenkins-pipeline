@@ -1,13 +1,13 @@
-                jobs[${JOB_NAME}] = {
-                    node("${COMPOSITION_NODE}") {
-                        ws(${COMPOSITION_WS}) {
-                            withEnv(${COMPOSITION_ENV}) {
-                                stage(${COMPOSITION_STAGE}) {
-                                    pascCleanWs()
-                                    unstashPipelineFramework()
+            jobs[${JOB_NAME}] = {
+                node("${COMPOSITION_NODE}") {
+                    ws(${COMPOSITION_WS}) {
+                        withEnv(${COMPOSITION_ENV}) {
+                            stage(${COMPOSITION_STAGE}) {
+                                pascCleanWs()
+                                unstashPipelineFramework()
 ${COMBINATION_STAGES}
-                                }
                             }
                         }
                     }
                 }
+            }
