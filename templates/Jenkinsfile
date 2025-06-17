@@ -131,11 +131,8 @@ pipeline {
     // don't use 'agent any'
     // 'agent none' allows the job to continue on the same node with the same files
     agent ${AGENT_DESC}
-
-    ${JENKINSFILE_OPTIONS}
-
-    ${JENKINSFILE_TRIGGERS}
-
+${JENKINSFILE_OPTIONS}
+${JENKINSFILE_TRIGGERS}
     stages {
         stage("PF-init") {
             steps {
