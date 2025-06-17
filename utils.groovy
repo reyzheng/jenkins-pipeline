@@ -155,7 +155,7 @@ def unstashPipelineFramework() {
             // call git clone to avoid this issue
             // git clone jenkins-pipeline should be called prior to unstash name: "stash-pf-config", to avoid git "not an empty directory" error
             if (isUnix() == true) {
-                //unstash name: "stash-pf-framework"
+                unstash name: "stash-pf-framework"
             }
             else {
                 print "git clone (workaround)"
